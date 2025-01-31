@@ -1,9 +1,10 @@
-def RichardsSolver( h0, V, v, mesh, solverParameters, boundaryCondition, C, K, moistureContent ):
+def RichardsSolver( h0, V, v, mesh, solverParameters, setBoundaryConditions, C, K, moistureContent ):
 
     from gadopt import Measure, Function, DirichletBC, dx, VTKFile, CheckpointFile, Constant, interpolate, assemble, sqrt, SpatialCoordinate
+    import firedrake as fd
     import numpy as np
-    from src.ProblemDefinition import ProblemDefinitionNonlinear, ProblemDefinitionLinear
-    from src.timeStepper import chooseTimeStep
+    from ProblemDefinition import ProblemDefinitionNonlinear, ProblemDefinitionLinear
+    from timeStepper import chooseTimeStep
     from scipy.io import savemat
 
     dx = Measure("dx", domain=mesh, metadata={"quadrature_degree": 3})
@@ -17,32 +18,29 @@ def RichardsSolver( h0, V, v, mesh, solverParameters, boundaryCondition, C, K, m
     mindt     = solverParameters["mindt"]
     imexParameter = solverParameters["imexParameter"]
 
-    h     = Function(V, name="Pressure Head");           h.assign(h0)
-    hOld  = Function(V, name="PressureHeadOld");        hOld.assign(h0)
+    h     = Function(V, name="Pressure Head");         h.assign(h0)
+    hOld  = Function(V, name="PressureHeadOld");       hOld.assign(h0)
     hStar = Function(V, name="ApproximateSolution");   hStar.assign(h0)
-    q     = Function(V, name="ApproximateSolution");     q.interpolate( -K(hOld, x)*(hOld.dx(0) + 1) )
+    q     = Function(V, name="ApproximateSolution");   q.interpolate( -K(hOld, x)*(hOld.dx(0) - 1) )
     theta = Function(V, name = "Moisture Conent")
 
-    DiffX = Constant( 0.1*sqrt(assemble((q)**2 * dx)) )
+    DiffX = Constant( solverParameters["domainDepth"]*sqrt(assemble((q)**2 * dx)) )
     timeStep = mindt; dt = Constant(timeStep)
     currentTime = 0
+    timeConstant = fd.Constant(currentTime)
     iterations = 0
 
-    solverRichardsNonlinear = ProblemDefinitionNonlinear( h, hOld, DiffX, currentTime, dt, v, V, imexParameter, K, C, boundaryCondition, mesh, dx, ds )
-    solverRichardsLinear    = ProblemDefinitionLinear( h, hStar, hOld, DiffX, currentTime, timeStep, v, V, imexParameter, K, C, boundaryCondition, mesh, dx, ds )
+    solverRichardsNonlinear = ProblemDefinitionNonlinear( h, hOld, DiffX, timeConstant, dt, v, V, imexParameter, K, C, setBoundaryConditions, mesh, dx, ds )
 
     # Save the solution
-    tStore = np.zeros(102)
+    tStore = np.zeros(solverParameters["numberPlots"]+2)
     xStore = np.linspace(0, solverParameters["domainWidth"], solverParameters["nodesWidth"])
     zStore = np.linspace(0, solverParameters["domainDepth"], solverParameters["nodesDepth"])
-    hStore = np.zeros((solverParameters["nodesWidth"], solverParameters["nodesDepth"], 102))
-    thetaStore = np.zeros((solverParameters["nodesWidth"], solverParameters["nodesDepth"], 102))
-
-
-    xx, zz = np.meshgrid(xStore, zStore)
+    hStore = np.zeros((solverParameters["nodesWidth"], solverParameters["nodesDepth"], solverParameters["numberPlots"]+2))
+    thetaStore = np.zeros((solverParameters["nodesWidth"], solverParameters["nodesDepth"], solverParameters["numberPlots"]+2))
     
     tNext = 0
-    tInterval = finalTime / 100
+    tInterval = finalTime / solverParameters["numberPlots"]
     plotIdx = 0
     trig = 0
 
@@ -65,6 +63,8 @@ def RichardsSolver( h0, V, v, mesh, solverParameters, boundaryCondition, C, K, m
         # Save the solution
         if currentTime >= tNext:
 
+            print("Time ", currentTime)
+
             tStore[plotIdx] = currentTime
             outfile.write(h, theta, time=currentTime)
             for X in range(len(xStore)):
@@ -76,22 +76,21 @@ def RichardsSolver( h0, V, v, mesh, solverParameters, boundaryCondition, C, K, m
             tNext = tNext + tInterval
 
             saveVariables = {'tStore' : tStore, 'z' : zStore, 'x' : xStore,  'pressureHead' : hStore, 'moistureContent' : thetaStore}
-            savemat("test4.mat", saveVariables)
+            savemat(solverParameters["fileName"], saveVariables)
 
             # Update timestep
-        if iterations % 50 == 0:
+        if iterations % 5 == 0:
 
             timeStep = chooseTimeStep( h, hOld, timeStep, solverParameters, dx )
             dt.assign(timeStep)
 
-            print(currentTime)
-            print(timeStep)
+            timeConstant.assign(round(currentTime))
 
-            q.interpolate( -K(hOld, x)*(hOld.dx(dimen-1) + 1) )
-            DiffX.assign( 0*sqrt(assemble((q)**2 * dx)) )
+            q.interpolate( -K(hOld, x)*(hOld.dx(dimen-1) - 1) )
+            DiffX.assign( solverParameters["Regularisation"]*sqrt(assemble((q)**2 * dx)) )
 
-        if (currentTime + timeStep) >= finalTime:
-            timeStep = finalTime - currentTime
+        if (currentTime + timeStep) >= tNext:
+            timeStep = tNext - currentTime
             timeStep = np.minimum(timeStep, maxdt)
             timeStep = np.maximum(timeStep, 1e-05)
             dt.assign(timeStep)

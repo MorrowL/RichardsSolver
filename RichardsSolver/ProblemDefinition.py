@@ -1,55 +1,50 @@
-def ProblemDefinitionNonlinear( h, hOld, DiffX, currentTime, timeStep, v, V, imexParameter, K, C, boundaryCondition, mesh, dx, ds ):
+def ProblemDefinitionNonlinear( h, hOld, DiffX, timeConstant, timeStep, v, V, imexParameter, K, C, setBoundaryConditions, mesh, dx, ds ):
     
     # Returns the variational problem for solving Richards equation
-
-    from gadopt import sqrt, dot, grad, inner, NonlinearVariationalProblem, NonlinearVariationalSolver, DirichletBC
-    from firedrake import assemble, Function, interpolate, assign, SpatialCoordinate
+    import firedrake as fd
+    import numpy as np
 
     dimen = mesh.topological_dimension()
-    x     = SpatialCoordinate(mesh)
+    x     = fd.SpatialCoordinate(mesh)
+
+    boundaryCondition = setBoundaryConditions(timeConstant)
 
     bottomBC = boundaryCondition[1];    topBC = boundaryCondition[2]
     keyB     = next(iter(bottomBC));    keyT  = next(iter(topBC))
     valB = bottomBC[keyB];              valT = topBC[keyT]
 
-    if keyT == "h":
-        A0, B0, C0 = 1, 0, valT
-    else:
-        A0, B0, C0 = 0, 1, -(K(h, x) - valT)
+    hBar = hMid(h, hOld, imexParameter)
 
-    if keyB == "h":
-        Ab, Bb, Cb = 1, 0, valB
+    if dimen == 1:
+        gravity = fd.as_vector([K(hBar, x) ])
+    elif dimen == 2:
+        gravity = fd.as_vector([0,  K(hBar, x) ]);
     else:
-        Ab, Bb, Cb = 0, 1, K(h, x)
+        gravity = fd.as_vector([0, 0, K(hBar, x) ])
 
-    # Impose strong Diriclet boundary condition
-    if B0 == 0:
-        bcTop    = DirichletBC(V, C0/A0, 4)   # BC at top
-    if Bb == 0:
-        bcBottom = DirichletBC(V, Cb/Ab, 3)   # BC at bottom
+    normalVector = fd.FacetNormal(mesh)
 
     # Define problem
-    F = ( inner( C( hMid(h, hOld, imexParameter), x )*(h - hOld)/timeStep, v) +
-        inner( K( hMid(h, hOld, imexParameter), x )*grad( 0.5*(h + hOld) ), grad(v) )  -
-    inner( K( hMid(h, hOld, imexParameter), x ).dx(dimen-1), v )
-    + inner( C(h, x)*DiffX*grad( h), grad(v) ) )*dx
+    F = ( fd.inner( C( hBar, x )*(h - hOld)/timeStep, v) +
+        fd.inner( K( hBar, x )*fd.grad( h ), fd.grad(v) )  -
+    fd.inner( K( hBar, x ).dx(dimen-1), v )
+    + fd.inner( C(hBar, x)*DiffX*fd.grad( h), fd.grad(v) ) )*dx
 
-    # Impose Neumann boundary conditions
-    if B0 != 0:
-        F = F -  (C0/B0) * v * ds(4)
-    if Bb != 0:
-        F = F -  (Cb/Bb) * v * ds(3)
+    strongBCS = [];
 
-    if (B0 == 0) and (Bb == 0):
-        problem = NonlinearVariationalProblem(F, h, bcs = [bcBottom, bcTop])
-    elif (B0 == 0):
-        problem = NonlinearVariationalProblem(F, h, bcs = [bcTop])
-    elif (Bb == 0):
-        problem = NonlinearVariationalProblem(F, h, bcs = [bcBottom])
-    else:
-        problem = NonlinearVariationalProblem(F, h)
+    for index in range(len(boundaryCondition)):
+        boundaryInfo  = boundaryCondition[index+1]
+        boundaryType  = next(iter(boundaryInfo));
+        boundaryValue = boundaryInfo[boundaryType]; 
+    
+        if boundaryType == "h":
+            strongBCS.append(fd.DirichletBC(V, boundaryValue, index+1))
+        else:
+            F = F - ( -( fd.dot( normalVector , gravity ) - boundaryValue) ) * v * ds(index+1)
+
+    problem = fd.NonlinearVariationalProblem(F, h, bcs = strongBCS)
    
-    solverRichardsNonlinear  = NonlinearVariationalSolver(problem,
+    solverRichardsNonlinear  = fd.NonlinearVariationalSolver(problem,
                                         solver_parameters={
                                         'mat_type': 'aij',
                                         'snes_type': 'newtonls',

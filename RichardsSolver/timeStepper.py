@@ -1,7 +1,7 @@
 def chooseTimeStep( h, hOld, timeStep, solverParameters, dx ):
    
     import numpy as np
-    from gadopt import sqrt, assemble
+    from firedrake import sqrt, assemble
 
     maxdt     = solverParameters["maxdt"]
     mindt     = solverParameters["mindt"]

@@ -1,11 +1,15 @@
-def ProblemDefinitionNonlinear( h, hOld, DiffX, timeConstant, timeStep, v, V, imexParameter, K, C, setBoundaryConditions, mesh, dx, ds ):
+def ProblemDefinitionNonlinear( h, hOld, DiffX, timeConstant, timeStep, v, V, timeIntegrator, modelFormulation, modelParameters, setBoundaryConditions, mesh, dx, ds ):
     
     # Returns the variational problem for solving Richards equation
     import firedrake as fd
     import numpy as np
+    from modelTypes import relativePermeability, waterRetention, moistureContent
 
     dimen = mesh.topological_dimension()
     x     = fd.SpatialCoordinate(mesh)
+
+    #timeIntegrator   = timeParameters['timeIntegration']
+    #modelFormulation = timeParameters['modelFormulation']
 
     boundaryCondition = setBoundaryConditions(timeConstant)
 
@@ -13,22 +17,45 @@ def ProblemDefinitionNonlinear( h, hOld, DiffX, timeConstant, timeStep, v, V, im
     keyB     = next(iter(bottomBC));    keyT  = next(iter(topBC))
     valB = bottomBC[keyB];              valT = topBC[keyT]
 
-    hBar = hMid(h, hOld, imexParameter)
+    if timeIntegrator == 'backwardEuler':
+        hBar = h; hDiff = h
+    elif timeIntegrator == 'crankNicolson':
+        hBar = 0.5*(h + hOld); hDiff = hBar
+    elif timeIntegrator == 'modifiedEuler':
+        hBar = hOld; hDiff = h
+    else:
+        hBar = hOld; hDiff = h
+
+
+    C = waterRetention( modelParameters, hBar, x, timeConstant )
+    K = relativePermeability( modelParameters, hBar, x, timeConstant )
 
     if dimen == 1:
-        gravity = fd.as_vector([K(hBar, x) ])
+        gravity = fd.as_vector([ K ])
     elif dimen == 2:
-        gravity = fd.as_vector([0,  K(hBar, x) ]);
+        gravity = fd.as_vector([0,  K ]);
     else:
-        gravity = fd.as_vector([0, 0, K(hBar, x) ])
+        gravity = fd.as_vector([0, 0, K ])
 
     normalVector = fd.FacetNormal(mesh)
 
     # Define problem
-    F = ( fd.inner( C( hBar, x )*(h - hOld)/timeStep, v) +
-        fd.inner( K( hBar, x )*fd.grad( h ), fd.grad(v) )  -
-    fd.inner( K( hBar, x ).dx(dimen-1), v )
-    + fd.inner( C(hBar, x)*DiffX*fd.grad( h), fd.grad(v) ) )*dx
+    if modelFormulation == 'mixed':
+
+        thetaOld = moistureContent( modelParameters, hOld, x, timeConstant)
+        thetaNew = moistureContent( modelParameters, h, x, timeConstant)
+
+        F = ( fd.inner( (thetaNew - thetaOld )/timeStep, v) +
+            fd.inner( K*fd.grad( hDiff ), fd.grad(v) )  -
+        fd.inner( K.dx(dimen-1), v )
+        + fd.inner( DiffX*fd.grad( h), fd.grad(v) ) )*dx
+
+    else:
+
+        F = ( fd.inner( C*(h - hOld)/timeStep, v) +
+            fd.inner( K*fd.grad( hDiff ), fd.grad(v) )  -
+        fd.inner( K.dx(dimen-1), v )
+        + fd.inner( DiffX*fd.grad( h), fd.grad(v) ) )*dx
 
     strongBCS = [];
 
@@ -49,7 +76,8 @@ def ProblemDefinitionNonlinear( h, hOld, DiffX, timeConstant, timeStep, v, V, im
                                         'mat_type': 'aij',
                                         'snes_type': 'newtonls',
                                         'ksp_type': 'preonly',
-                                        'pc_type': 'lu'})
+                                        'pc_type': 'lu',
+                                        })
     
     return solverRichardsNonlinear
     

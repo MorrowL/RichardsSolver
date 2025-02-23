@@ -12,51 +12,50 @@ import time
 timeParameters = {
     "finalTime"    : 150000,
     "timeStepType" : "adaptive",
-    "timeStepSize" : 30,
-    "modelFormulation" : 'mixed',
+    "timeStepTolerance" : 0.1,
     "timeIntegration" : 'crankNicolson'
 }
 
 solverParameters = {
-  "domainDepth"  : 3.00,   # depth of domain (cms)
-  "nodesDepth"   : 150,
-  "domainWidth"  : 5.0,   # depth of domain (cms)
-  "nodesWidth"   : 300,
-  "Regularisation" : 1e-07, 
-  "fileName"   : "multiMaterial.pvd",
-  "numberPlots"   : 30
+  "modelFormulation" : 'mixedForm',
+  "smoothingFactor"  : 0e-08, 
+  "fileName"         : "multiMaterial.pvd",
+  "numberPlots"      : 30
 }
 
-mesh = RectangleMesh( solverParameters["nodesWidth"], solverParameters["nodesDepth"], solverParameters["domainWidth"], solverParameters["domainDepth"])
-
+mesh = RectangleMesh( 250, 150, 5, 3)
 mesh.cartesian = True
 x     = SpatialCoordinate(mesh)
 
-gridSpace = solverParameters['domainDepth'] / solverParameters['nodesDepth']
-eps = 25;
-Ix = (1 + 0.5*tanh(eps*(x[0]-1)) ) - (1 + 0.5*tanh(eps*(x[0]-4)) )
-Iz = 0.5*(1 + tanh(eps*(x[1]-1)))  - 0.5*(1 + tanh(eps*(x[1] - 3)));
-I3 = 0.5*(1 + tanh(eps*(1.5 - x[1] - 0.75*cos(x[0]+0.6))));
-I = 1 - Ix*Iz*I3
+V = FunctionSpace(mesh, "CG", 1)
+v = TestFunction(V)
+
+cellSize = Function(V, name="InitialCondition")
+cellSize.interpolate(CellSize(mesh)); 
+gridSpacing = cellSize.at(0, 0); print(gridSpacing)
+
+eps = 25; I = 1
+xPoints = [2.5, 1.5, 4.0, 3.25, 0.75]
+zPoints = [1.5, 2, 1.75, 0.5, 0.5]
+for index in range(len(xPoints)):
+  R = sqrt( (x[0] - xPoints[index])**2 + (x[1] - zPoints[index])**2 ) - 0.50
+  I = 0.5*I*(1 + tanh(eps*R) );
+
 
 modelParameters = {
    "modelType" : "VanGenuchten",
    "thetaR"    : 0.10,
    "thetaS"    : 0.38,
-   "alpha"     : 3.40,
+   "alpha"     : 3.35,
    "n"         : 2.00,
-   "Ks"        : 5.8300e-05*I + 5.8300e-07*(1 - I)
+   "Ks"        : 5.00e-05*I + 5.00e-07*(1 - I),
+    "gridSpacing" : gridSpacing,
 }
 
-
-V = FunctionSpace(mesh, "CG", 1)
-v = TestFunction(V)
-
 h0   = Function(V, name="InitialCondition")
-
 h0.interpolate( -2.5 )
 
-def setBoundaryConditions(timeConstant):
+def setBoundaryConditions(timeConstant, x):
 
     leftBC, rightBC, bottomBC, topBC = 1,2,3,4
     boundaryCondition = {

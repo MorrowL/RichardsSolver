@@ -9,7 +9,7 @@ def moistureContent( modelParameters, h, x, time):
         thetaR = modelParameters["thetaR"]
         thetaS = modelParameters["thetaS"]
 
-        theta = thetaR + alpha*(thetaS - thetaR) / (alpha + abs(h)**beta) ;
+        theta = thetaR + alpha*(thetaS - thetaR) / (alpha + abs(100*h)**beta) ;
     
     elif modelParameters["modelType"] == "VanGenuchten":
 
@@ -23,46 +23,52 @@ def moistureContent( modelParameters, h, x, time):
 
     elif modelParameters["modelType"] == "exponential":
 
-        alpha  = modelParameters["alpha"]
+        alphaT = modelParameters["alphaT"]
         thetaR = modelParameters["thetaR"]
         thetaS = modelParameters["thetaS"]
 
-        theta = thetaR + (thetaS - thetaR) * fd.exp(h * alpha) 
+        #theta = thetaR + (thetaS - thetaR) * fd.exp(h * alphaT) 
+        a = 0.9251; b = 2.4041; c = 1.2302;
+        theta = thetaR + (thetaS - thetaR) / (a + b*((-h)**c))
 
     else:
 
         print("Model type not recognised")
 
+    #return fd.conditional(h <= 0, theta, thetaS)
     return theta
 
 def relativePermeability( modelParameters, h, x, time):
 
     import firedrake as fd
+    Ks    = modelParameters["Ks"]
+    dx    = modelParameters["gridSpacing"]
   
     if modelParameters["modelType"] == "Haverkamp":
 
         A     = modelParameters["A"]
         gamma = modelParameters["gamma"]
-        Ks    = modelParameters["Ks"]
 
-        K =  Ks*A / ( A + pow(abs(h), gamma) )
+        K =  Ks*( dx*0e-00 + A / ( A + pow(abs(100*h), gamma) ) )
 
     elif modelParameters["modelType"] == "VanGenuchten":
 
         alpha  = modelParameters["alpha"]
         n      = modelParameters["n"]
-        Ks     = modelParameters["Ks"]
         m = 1 - 1/n
 
-        K =  Ks * (1 - (alpha*abs(h))**(n-1)* (1 + pow(alpha*abs(h), n))**(-m))**2 / (( 1 + pow(alpha*abs(h), n) )**(m/2))
+        K = Ks * ( 0.25*dx*5e-05 +  ( 1 - (alpha*abs(h))**(n-1) * (1 + (alpha*abs(h))**n)**(-m))**2 / ( 1 + (alpha*abs(h)**n )**(m/2)));
+
 
     elif modelParameters["modelType"] == "exponential":
 
-        alpha  = modelParameters["alpha"]
-        Ks     = modelParameters["Ks"]
+        alphaK  = modelParameters["alphaK"]
 
-        K = Ks*fd.exp(h*alpha)
+       # K = Ks*fd.exp(h*alphaK)
+        a = 0.9010; b = 10.0721;
+        K = Ks *(1e-06 +  a * fd.exp(h * b))
 
+    #return fd.conditional(h <= 0, K, Ks)
     return K
 
 def waterRetention( modelParameters, h, x, time):
@@ -90,10 +96,11 @@ def waterRetention( modelParameters, h, x, time):
 
     elif modelParameters["modelType"] == "exponential":
 
-        alpha  = modelParameters["alpha"]
+        alphaT  = modelParameters["alphaT"]
         thetaR = modelParameters["thetaR"]
         thetaS = modelParameters["thetaS"]
 
-        C = (thetaS - thetaR) * fd.exp(h * alpha) * alpha 
+        C = (thetaS - thetaR) * fd.exp(h * alphaT) * alphaT
 
+    #return fd.conditional(h <= 0, C, 0)
     return C

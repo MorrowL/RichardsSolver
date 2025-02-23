@@ -14,24 +14,28 @@ import time
 timeParameters = {
     "finalTime"    : 86400,
     "timeStepType" : "constant",
-    "timeStepSize" : 15,
-    "modelFormulation" : 'mixed',
-    "timeIntegration" : 'crankNicolson'
+    "timeStepSize" : 30,
+    "timeIntegration" : 'forwardEuler'
 }
 
 solverParameters = {
-  "domainDepth"  : 1.00,   # depth of domain (cms)
-  "nodesDepth"   : 1000,
-  "Regularisation" : 0.0, 
-  "dtTol"        : 0.10,
-  "fileName"   : "Celia2.mat",
-  "numberPlots"   : 30
+  "domainDepth"     : 1.00,   # depth of domain (m)
+  "nodesDepth"      : 250,
+  "modelFormulation" : 'mixedForm',
+  "smoothingFactor" : 0e-07, 
+  "fileName"        : "testFile.mat",
+  "numberPlots"     : 30
 }
 
 mesh = IntervalMesh( solverParameters["nodesDepth"], solverParameters["domainDepth"])
-
 mesh.cartesian = True
 x     = SpatialCoordinate(mesh)
+V = FunctionSpace(mesh, "CG", 1)
+v = TestFunction(V)
+
+cellSize = Function(V, name="InitialCondition")
+cellSize.interpolate(CellSize(mesh)); 
+gridSpacing = cellSize.at(0); print(gridSpacing)
 
 modelParameters = {
    "modelType" : "VanGenuchten",
@@ -39,17 +43,16 @@ modelParameters = {
    "thetaS"    : 0.368,
    "alpha"     : 3.35,
    "n"         : 2.00,
-   "Ks"        : 0.0000922,
+   "Ks"        : 9.22e-05,
+   "gridSpacing" : gridSpacing,
 }
-
-V = FunctionSpace(mesh, "CG", 1)
-v = TestFunction(V)
 
 # Initial condition
 h0   = Function(V, name="InitialCondition")
 h0.interpolate( -10.0*(x[0]<0.9) + (x[0]>=0.9)*(92.5*x[0] - 93.25) )
+h0.interpolate( -10.0 )
 
-def setBoundaryConditions(timeConstant):
+def setBoundaryConditions(timeConstant, x):
 
     bottomBC, topBC = 1,2
     boundaryCondition = {

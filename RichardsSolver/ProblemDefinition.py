@@ -1,4 +1,4 @@
-def ProblemDefinitionNonlinear( h, hOld, DiffX, timeConstant, timeStep, v, V, timeIntegrator, modelFormulation, modelParameters, setBoundaryConditions, mesh, dx, ds ):
+def ProblemDefinitionNonlinear( h, hOld, smoothingParameter, timeConstant, timeStep, v, V, timeIntegrator, modelFormulation, modelParameters, setBoundaryConditions, mesh, dx, ds ):
     
     # Returns the variational problem for solving Richards equation
     import firedrake as fd
@@ -11,11 +11,8 @@ def ProblemDefinitionNonlinear( h, hOld, DiffX, timeConstant, timeStep, v, V, ti
     #timeIntegrator   = timeParameters['timeIntegration']
     #modelFormulation = timeParameters['modelFormulation']
 
-    boundaryCondition = setBoundaryConditions(timeConstant)
+    boundaryCondition = setBoundaryConditions(timeConstant, x)
 
-    bottomBC = boundaryCondition[1];    topBC = boundaryCondition[2]
-    keyB     = next(iter(bottomBC));    keyT  = next(iter(topBC))
-    valB = bottomBC[keyB];              valT = topBC[keyT]
 
     if timeIntegrator == 'backwardEuler':
         hBar = h; hDiff = h
@@ -40,7 +37,7 @@ def ProblemDefinitionNonlinear( h, hOld, DiffX, timeConstant, timeStep, v, V, ti
     normalVector = fd.FacetNormal(mesh)
 
     # Define problem
-    if modelFormulation == 'mixed':
+    if modelFormulation == 'mixedForm':
 
         thetaOld = moistureContent( modelParameters, hOld, x, timeConstant)
         thetaNew = moistureContent( modelParameters, h, x, timeConstant)
@@ -48,22 +45,21 @@ def ProblemDefinitionNonlinear( h, hOld, DiffX, timeConstant, timeStep, v, V, ti
         F = ( fd.inner( (thetaNew - thetaOld )/timeStep, v) +
             fd.inner( K*fd.grad( hDiff ), fd.grad(v) )  -
         fd.inner( K.dx(dimen-1), v )
-        + fd.inner( DiffX*fd.grad( h), fd.grad(v) ) )*dx
+        + fd.inner( smoothingParameter*fd.grad( h), fd.grad(v) ) )*dx
 
     else:
 
-        F = ( fd.inner( C*(h - hOld)/timeStep, v) +
-            fd.inner( K*fd.grad( hDiff ), fd.grad(v) )  -
-        fd.inner( K.dx(dimen-1), v )
-        + fd.inner( DiffX*fd.grad( h), fd.grad(v) ) )*dx
+        F = ( fd.inner( C*(h - hOld)/timeStep, v) + fd.inner( K*fd.grad( hDiff ), fd.grad(v) )  -
+        fd.inner( K.dx(dimen-1), v ) + fd.inner( smoothingParameter*fd.grad( h), fd.grad(v) ) )*dx
 
     strongBCS = [];
 
     for index in range(len(boundaryCondition)):
+
         boundaryInfo  = boundaryCondition[index+1]
         boundaryType  = next(iter(boundaryInfo));
         boundaryValue = boundaryInfo[boundaryType]; 
-    
+
         if boundaryType == "h":
             strongBCS.append(fd.DirichletBC(V, boundaryValue, index+1))
         else:
@@ -71,77 +67,33 @@ def ProblemDefinitionNonlinear( h, hOld, DiffX, timeConstant, timeStep, v, V, ti
 
     problem = fd.NonlinearVariationalProblem(F, h, bcs = strongBCS)
    
-    solverRichardsNonlinear  = fd.NonlinearVariationalSolver(problem,
-                                        solver_parameters={
-                                        'mat_type': 'aij',
-                                        'snes_type': 'newtonls',
-                                        'ksp_type': 'preonly',
-                                        'pc_type': 'lu',
-                                        })
+    # Use direct solvers
+    if dimen <= 2:
+
+        solverRichardsNonlinear  = fd.NonlinearVariationalSolver(problem,
+                                            solver_parameters={
+                                            'mat_type': 'aij',
+                                            'snes_type': 'newtonls',
+                                            'ksp_type': 'preonly',
+                                            'pc_type': 'lu',
+                                            })
+        
+    # Use iterative solvers
+    else:
+
+        solverRichardsNonlinear  = fd.NonlinearVariationalSolver(problem,
+                                    solver_parameters={
+                                    'mat_type': 'aij',
+                                    'snes_type': 'ksponly',
+                                    'ksp_type': 'gmres',
+                                    "ksp_rtol": 1e-5,
+                                    'pc_type': 'sor',
+                                    })
+
     
     return solverRichardsNonlinear
     
-def ProblemDefinitionLinear( h, hStar, hOld, DiffX, currentTime, timeStep, v, V, imexParameter, K, C, boundaryCondition, mesh, dx, ds ):
 
-    from gadopt import lhs, rhs, TrialFunction, Function, inner, grad, LinearVariationalProblem, LinearVariationalSolver, SpatialCoordinate, DirichletBC
-
-    hTemp = TrialFunction(V)
-
-    dimen = mesh.topological_dimension()
-    x     = SpatialCoordinate(mesh)
-
-    bottomBC = boundaryCondition[1];    topBC = boundaryCondition[2]
-    keyB     = next(iter(bottomBC));    keyT  = next(iter(topBC))
-    valB = bottomBC[keyB];              valT = topBC[keyT]
-
-    if keyT == "h":
-        A0, B0, C0 = 1, 0, valT
-    else:
-        A0, B0, C0 = 0, 1, -(K(h, x) - valT)
-
-    if keyB == "h":
-        Ab, Bb, Cb = 1, 0, valB
-    else:
-        Ab, Bb, Cb = 0, 1, K(h, x)
-
-    # Impose strong Diriclet boundary condition
-    if B0 == 0:
-        bcTop    = DirichletBC(V, C0/A0, 4)   # BC at top
-    if Bb == 0:
-        bcBottom = DirichletBC(V, Cb/Ab, 3)   # BC at bottom
-
-    # Define problem
-    F = ( inner( C( 0.5*(hOld + hOld), x )*(hTemp - hOld)/timeStep, v) +
-        inner( K( 0.5*(hOld + hOld), x )*grad( 0.5*(hTemp + hOld)), grad(v) )  +
-    inner( K( 0.5*(hOld + hOld), x ).dx(dimen-1), v ) )*dx
-
-        # Impose Neumann boundary conditions
-    if B0 != 0:
-        F = F -  (C0/B0) * v * ds(4)
-    if Bb != 0:
-        F = F -  (Cb/Bb) * v * ds(3)
-
-    a, L = lhs(F), rhs(F)
-
-    if (B0 == 0) and (Bb == 0):
-        problem = LinearVariationalProblem(a, L, h, bcs = [bcBottom, bcTop])
-    elif (B0 == 0):
-        problem = LinearVariationalProblem(a, L, h, bcs = [bcTop])
-    elif (Bb == 0):
-        problem = LinearVariationalProblem(a, L, h, bcs = [bcBottom])
-    else:
-        problem = LinearVariationalProblem(a, L, h)
-
-    solverRichardsLinear  = LinearVariationalSolver(problem,
-                                        solver_parameters={
-                                        'mat_type': 'aij',
-                                        'ksp_type': 'preonly',
-                                        'pc_type': 'lu'})
-    
-    return solverRichardsLinear
-
-def hMid(h, hOld, omega):
-  return( omega*h + (1 - omega)*hOld )
 
 
 

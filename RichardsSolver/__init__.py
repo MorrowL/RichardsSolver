@@ -5,6 +5,7 @@ from .richards_solver import (
 )
 
 from .richards_equation import (
+    richards_equation
 )
 
 from .soil_curves import (

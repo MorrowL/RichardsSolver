@@ -28,47 +28,52 @@ def data_2_function(mesh_coords, file_name):
     return elevation
 
 
-def penaltyParameter(V):
-    
-    # Returns the penalty parameter for SIPG when using a discontinuous function space V
+def interior_penalty_factor(eq: Equation, *, shift: int = 0) -> float:
+    """Interior Penalty method
 
-    degree = ufl_elem.degree()  # Get info about function space
+    For details on the choice of sigma, see
+    https://www.researchgate.net/publication/260085826
 
-    if degree == 0:
-        sigmaF = fd.Constant(2)
-    if degree == 1:
-        sigmaF = fd.Constant(5)
+    We use Equations (3.20) and (3.23). Instead of getting the maximum over two adjacent
+    cells (+ and -), we just sum (i.e. 2 * avg) and have an extra 0.5 for internal
+    facets.
+    """
+    degree = eq.trial_space.ufl_element().degree()
+    if not isinstance(degree, int):
+        degree = max(degree)
+
+    if degree == 0:  # probably only works for orthogonal quads and hexes
+        sigma = 1.0
     else:
-        sigmaF = fd.Constant(9)
+        # safety factor: 1.0 is theoretical minimum
+        alpha = getattr(eq, "interior_penalty", 2.0)
+        num_facets = eq.mesh.ufl_cell().num_facets
+        sigma = alpha * cell_edge_integral_ratio(eq.mesh, degree + shift) * num_facets
 
-    return sigmaF
+    return sigma
 
 
-def updateTimeStep(h, hOld, timeStep, timeParameters, V):
+def cell_edge_integral_ratio(mesh: fd.MeshGeometry, p: int) -> int:
+    r"""
+    Ratio C such that \int_f u^2 <= C Area(f)/Volume(e) \int_e u^2 for facets f,
+    elements e, and polynomials u of degree p.
 
-    if timeParameters["timeStepType"] == 'constant':
-
-        timeStep.assign(timeParameters["timeStepSize"]); 
-
-    elif timeParameters["timeStepType"] == 'adaptive':
-
-        relativeErrorFunc = fd.Function(V).interpolate(abs((h - hOld)/(h)))
-        with relativeErrorFunc.dat.vec_ro as v:
-            relativeError = v.max()[1]
-        PETSc.Sys.Print(relativeError)
-
-        timeStepNew = float(timeStep) * timeParameters['timeStepTolerance'] / (relativeError + 1e-06)
-        timeStepNew = round(timeStepNew)
-
-        timeStepNew = np.maximum(timeStepNew, 1e-1)
-        timeStepNew = np.minimum(timeStepNew, timeParameters["maximumTimeStep"])
-        timeStepNew = np.maximum(timeStepNew, timeParameters["minimumTimeStep"])
-        PETSc.Sys.Print("dt ", float(timeStep))
-
-        timeStep.assign(timeStepNew)
-
-    else:
-
-        PETSc.Sys.Print("Time stepping method not recognised")
-
-    return timeStep
+    See Equation (3.7), Table 3.1, and Appendix C from Hillewaert's thesis:
+    https://www.researchgate.net/publication/260085826
+    """
+    match cell_type := mesh.ufl_cell().cellname:
+        case "triangle":
+            return (p + 1) * (p + 2) / 2.0
+        case "quadrilateral" | "interval * interval":
+            return (p + 1) ** 2
+        case "triangle * interval":
+            return (p + 1) ** 2
+        case "quadrilateral * interval" | "hexahedron":
+            # if e is a wedge and f is a triangle: (p+1)**2
+            # if e is a wedge and f is a quad: (p+1)*(p+2)/2
+            # here we just return the largest of the the two (for p>=0)
+            return (p + 1) ** 2
+        case "tetrahedron":
+            return (p + 1) * (p + 3) / 3
+        case _:
+            raise NotImplementedError(f"Unknown cell type in mesh: {cell_type}")

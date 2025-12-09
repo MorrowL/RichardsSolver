@@ -3,9 +3,7 @@ RichardsSolver
 A numerical package for solving Richards' equation
 ------------------------------------------------------------------------
 
-gwassess is a python package that implements analytical and reference solutions
-to the Richards equation in 2D and 3D domains. The package provides benchmark
-solutions for testing numerical solvers of unsaturated flow in porous media.
+RichardsSolver is a Firedrake based package (https://www.firedrakeproject.org/) for numerically solving Richards' equation in two- and three-dimensional domains.
 
 Installation
 ============

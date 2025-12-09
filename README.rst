@@ -1,6 +1,6 @@
-gwassess
+RichardsSolver
 ========================================================================
-Analytical Solutions for the Richards Equation in 2D and 3D Domains
+A numerical package for solving Richards' equation
 ------------------------------------------------------------------------
 
 gwassess is a python package that implements analytical and reference solutions
@@ -21,7 +21,7 @@ Or install directly from the repository:
 
 .. code-block:: bash
 
-    pip install git+https://github.com/g-adopt/gwassess.git
+    pip clone git+https://github.com/g-adopt/gwassess.git
 
 Usage
 =====

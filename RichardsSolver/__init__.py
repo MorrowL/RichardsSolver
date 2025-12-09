@@ -20,5 +20,6 @@ from .soil_curves import (
 )
 
 from .utility import (
-    data_2_function
+    data_2_function,
+    interior_penalty_factor
 )

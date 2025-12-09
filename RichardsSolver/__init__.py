@@ -8,4 +8,5 @@ from .richards_equation import (
 )
 
 from .utility import (
+  data_2_function
 )

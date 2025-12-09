@@ -10,18 +10,12 @@ solutions for testing numerical solvers of unsaturated flow in porous media.
 Installation
 ============
 
-gwassess is a standard python package that can be installed from source:
+RichardsSolver can be clones from Github via:
 
 .. code-block:: bash
 
-    cd gwassess
-    pip install .
-
-Or install directly from the repository:
-
-.. code-block:: bash
-
-    pip clone git+https://github.com/g-adopt/gwassess.git
+    git clone https://github.com/MorrowL/RichardsSolver.git
+    pip install -e RichardsSolver
 
 Usage
 =====

@@ -22,5 +22,6 @@ from .soil_curves import (
 from .utility import (
     data_2_function,
     interior_penalty_factor,
-    cell_edge_integral_ratio
+    cell_edge_integral_ratio,
+    get_boundary_ids
 )

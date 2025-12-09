@@ -2,6 +2,10 @@ from firedrake import *
 from firedrake.output import VTKFile
 
 from .richards_solver import (
+    richardsSolver,
+    mass_term,
+    diffusion_term,
+    gravity_advection
 )
 
 from .richards_equation import (

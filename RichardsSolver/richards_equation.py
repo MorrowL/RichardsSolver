@@ -5,9 +5,9 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any
 
 
-class richards_equation(ABC):
+class RichardsSolver(ABC):
 
-    def __init__(self, V, mesh, quad_degree):
+    def __init__(self, V, mesh, solver_parameters, quad_degree):
 
         self.mesh = mesh
         self.trial_space = V
@@ -26,3 +26,10 @@ class richards_equation(ABC):
         else:
             self.dS = fd.Measure("dS", domain=mesh, metadata={"quadrature_degree": quad_degree})
             self.ds = fd.Measure("ds", domain=mesh, metadata={"quadrature_degree": quad_degree})
+
+        if solver_parameters == "direct":
+            self.solver_parameters = {"mat_type": "aij", "ksp_type": 'preonly', "pc_type": 'lu', "pc_factor_mat_solver_type": "mumps"}
+        elif solver_parameters == "iterative":
+            self.solver_parameters = = {"ksp_type": 'preonly', "pc_type": 'lu'}
+        else:
+            self.solver_parameters = = solver_parameters

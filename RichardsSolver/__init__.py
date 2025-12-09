@@ -7,6 +7,13 @@ from .richards_solver import (
 from .richards_equation import (
 )
 
+from .soil_curves import (
+    SoilCurve,
+    HaverkampCurve,
+    VanGenuchtenCurve,
+    ExponentialCurve,
+)
+
 from .utility import (
     data_2_function
 )

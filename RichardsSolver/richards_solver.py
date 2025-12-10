@@ -1,6 +1,6 @@
 import firedrake as fd
+from RichardsSolver.utilities import interior_penalty_factor
 import numpy as np
-from gadopt.equations import interior_penalty_factor
 import ufl
 
 """
@@ -13,54 +13,44 @@ where:
 - $C(h) = d\theta/dh$ is the specific moisture capacity
 - $K(h)$ is the hydraulic conductivity
 - $z$ is the vertical coordinate (gravity term)
-This equation is expressed in variational (weak) form and expressied in the residual form $0 = F(h, v)$ where $v$ is the 
+This equation is expressed in variational (weak) form and expressied in the residual form $0 = F(h, v)$ where $v$ is the test function
 INPUTS:
     h : solution at current time step to be solved for
     h_hold : solution at previous time step
     time : curent time
     time_step : size of timestep
-    time_integrator : choice of method to integrate equation in time
     eq : dumb
-    soil_curves : models the hydrological properties
 """
 
 
-def richardsSolver(h, h_old, time, time_step, time_integrator, eq, soil_curves, bcs):
+def richardsSolver(h: fd.Function, h_old: fd.Function, time: fd.Constant, time_step: fd.Constant, eq):
 
-    water_retention = soil_curves.water_retention
-    moisture_content = soil_curves.moisture_content
-    relative_conductivity = soil_curves.relative_conductivity
+    relative_conductivity = eq.soil_curves.relative_conductivity
 
     # Choose the time integration method
-    match time_integrator:
+    match eq.time_integrator:
+        case "Picard":
+            hDiff = h
         case "SemiImplicit":
             hDiff = h
-            K = relative_permeability(h_old)
-            C = water_retention(h_old)
-            theta = moisture_content(h_old)
+            K = relative_conductivity(h_old)
         case "ImplicitMidpoint":
             hDiff = (h + h_old)/2
-            K = relative_permeability(hDiff)
-            C = water_retention(hDiff)
-            theta = moisture_content(hDiff)
+            K = relative_conductivity(hDiff)
         case 'BackwardEuler':
             hDiff = h
-            K = relative_permeability(h)
-            C = water_retention(h)
-            theta = moisture_content(h)
+            K = relative_conductivity(h)
         case 'CrankNicolson':
             hDiff = (h + h_old)/2
-            K = (relative_permeability(h)+relative_permeability(h_old))/2
-            C = (water_retention(h)+water_retention(h_old))/2
-            theta = (moisture_content(h)+moisture_content(h_old))/2
+            K = (relative_conductivity(h)+relative_conductivity(h_old))/2
         case _:
             raise ValueError("Temporal integration method not recognised")
-    K_old = relative_permeability(h_old)
+    K_old = relative_conductivity(h_old)
 
-    # Richards equation in variational residual form
-    F = mass_term(h, h_old, time_step, soil_curves, C, theta, eq) \
+    # Richards equation in variational residual form F = 0
+    F = mass_term(h, h_old, time_step, eq) \
         + gravity_advection(K, eq) \
-        + diffusion_term(hDiff, K, K_old, eq, bcs)
+        + diffusion_term(hDiff, K, K_old, eq)
 
     problem = fd.NonlinearVariationalProblem(F, h)
 
@@ -73,19 +63,23 @@ def richardsSolver(h, h_old, time, time_step, time_integrator, eq, soil_curves, 
     return solverRichardsNonlinear
 
 
-def mass_term(h, hOld, time_step, soil_curves, C, theta, eq):
+def mass_term(h: fd.Function, h_old: fd.Function, time_step: fd.Constant, eq):
 
-    Ss      = soil_curves.parameters["Ss"]
-    theta_s = soil_curves.parameters['theta_s']
-    theta_r = soil_curves.parameters['theta_r']
-    S = (theta - theta_r)/(theta_s - theta_r)
+    theta_new = eq.soil_curves.moisture_content(h)
+    theta_old = eq.soil_curves.moisture_content(h_old)
 
-    F = fd.inner((C + Ss*S) * (h - hOld)/time_step, eq.v) * eq.dx
+    if eq.time_integrator == "SemiImplicit":
+        C = eq.soil_curves.water_retention(h_old)
+        F = fd.inner(C*(h - h_old)/time_step, eq.v) * eq.dx
+    else:
+        F = fd.inner((theta_new - theta_old)/time_step, eq.v) * eq.dx
 
     return F
 
 
-def diffusion_term(hDiff, K, K_old, eq, bcs):
+def diffusion_term(hDiff: fd.Function, K: fd.Function, K_old: fd.Function, eq):
+
+    bcs = eq.bcs
 
     # Volume integral
     F = fd.inner(fd.grad(eq.v), K * fd.grad(hDiff)) * eq.dx
@@ -93,6 +87,7 @@ def diffusion_term(hDiff, K, K_old, eq, bcs):
     # SIPG
     sigma = interior_penalty_factor(eq, shift=0)
     sigma_int = sigma * fd.avg(fd.FacetArea(eq.mesh) / fd.CellVolume(eq.mesh))
+
     F += sigma_int*fd.inner(fd.jump(eq.v, eq.n), fd.avg(K_old) * fd.jump(hDiff, eq.n)) * eq.dS
     F -= fd.inner(fd.avg(K_old * fd.grad(eq.v)), fd.jump(hDiff, eq.n)) * eq.dS
     F -= fd.inner(fd.jump(eq.v, eq.n), fd.avg(K_old * fd.grad(hDiff))) * eq.dS
@@ -115,7 +110,7 @@ def diffusion_term(hDiff, K, K_old, eq, bcs):
     return F
 
 
-def gravity_advection(K, eq):
+def gravity_advection(K: fd.Function, eq):
 
     # Gravity driven volumetric flux
 

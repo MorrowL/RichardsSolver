@@ -8,6 +8,10 @@ from .richards_solver import (
     gravity_advection
 )
 
+from .equations import (
+    advance_solution
+)
+
 from .richards_equation import (
     RichardsSolver
 )
@@ -19,9 +23,8 @@ from .soil_curves import (
     ExponentialCurve,
 )
 
-from .utility import (
+from .utilities import (
     data_2_function,
     interior_penalty_factor,
     cell_edge_integral_ratio,
-    get_boundary_ids
 )

@@ -3,6 +3,7 @@ import scipy.io
 import firedrake as fd
 from firedrake.petsc import PETSc
 from scipy.interpolate import griddata
+import ufl
 
 def data_2_function(mesh_coords, file_name):
     # Takes a data set that defines a value defined at the surface of the mesh and defines a firedrake function from this data
@@ -78,3 +79,29 @@ def cell_edge_integral_ratio(mesh: fd.MeshGeometry, p: int) -> int:
             return (p + 1) * (p + 3) / 3
         case _:
             raise NotImplementedError(f"Unknown cell type in mesh: {cell_type}")
+        
+
+class CombinedSurfaceMeasure(ufl.Measure):
+    """
+    A surface measure that combines ds_v, the integral over vertical boundary facets, and ds_t and ds_b,
+    the integral over horizontal top and bottom facets. The vertical boundary facets are identified with
+    the same surface ids as ds_v. The top and bottom surfaces are identified via the "top" and "bottom" ids."""
+
+    def __init__(self, domain, degree):
+        self.ds_v = fd.ds_v(domain=domain, degree=degree)
+        self.ds_t = fd.ds_t(domain=domain, degree=degree)
+        self.ds_b = fd.ds_b(domain=domain, degree=degree)
+
+    def __call__(self, subdomain_id, **kwargs):
+        if subdomain_id == 'top':
+            return self.ds_t(**kwargs)
+        elif subdomain_id == 'bottom':
+            return self.ds_b(**kwargs)
+        else:
+            return self.ds_v(subdomain_id, **kwargs)
+
+    def __rmul__(self, other):
+        """This is to handle terms to be integrated over all surfaces in the form of other*ds.
+        Here the CombinedSurfaceMeasure ds is not called, instead we just split it up as below."""
+        return other*self.ds_v + other*self.ds_t + other*self.ds_b
+

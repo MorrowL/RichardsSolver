@@ -20,6 +20,9 @@ def advance_solution(eq, h, richards_solver):
         case "ImplicitMidpoint":
             K = relative_conductivity((h+h_old)/2)
             q.interpolate(-K*fd.grad((h+h_old)/2 + x[eq.dimen-1]))
+        case "CrankNicolson":
+            K = (relative_conductivity(h) + relative_conductivity(h_old))/2
+            q.interpolate(-K*fd.grad((h+h_old)/2 + x[eq.dimen-1]))
 
     snes = richards_solver.snes
 

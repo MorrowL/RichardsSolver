@@ -25,6 +25,7 @@ from .soil_curves import (
 
 from .utilities import (
     data_2_function,
+    CombinedSurfaceMeasure,
     interior_penalty_factor,
     cell_edge_integral_ratio,
 )

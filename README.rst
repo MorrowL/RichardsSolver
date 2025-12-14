@@ -44,38 +44,28 @@ Basic usage example for the Tracy 2D analytical solution:
     X = [7.62, 7.62]
     h = solution.pressure_head_cartesian(X, t, bc_type='specified_head')
 
-Available Solutions
+Available demos
 ===================
 
-TracyRichardsSolution2D
+Tracy's exact solution
 -----------------------
-
-Analytical solution for 2D Richards equation with exponential soil properties.
-Provides both steady-state and transient solutions with two boundary condition types:
-
-- Specified head on all boundaries
-- No-flux on lateral boundaries
+A comparison with Tracy's exact solution in two- and three-dimensions with exponential soil properties. Provides comparison to steady-state and transient solutions.
 
 Reference: Tracy, F. T. (2006). Clean two- and three-dimensional analytical
 solutions of Richards' equation for testing numerical solvers. Water Resources
 Research, 42(8). https://doi.org/10.1029/2005WR004638
 
-VauclinRichardsSolution2D
---------------------------
-
-Reference solution for 2D infiltration benchmark with Haverkamp soil model.
-This is a numerical benchmark without closed-form analytical solution, but
-provides standard problem setup for comparison.
+Water table recharge
+---------------------
+Reproduces Vauclin's 2D test case, which involves the rechange of a water table performed with the Haverkamp soil model.
 
 Reference: Vauclin, M., Khanji, D., & Vachaud, G. (1979). Experimental and
 numerical study of a transient, two-dimensional unsaturated-saturated water
 table recharge problem. Water Resources Research, 15(5), 1089-1101.
 
-CockettRichardsSolution3D
---------------------------
-
-Reference solution for 3D heterogeneous benchmark with Van Genuchten soil model.
-Provides spatially varying material properties and standard problem setup.
+3D water infultration into heterogeneuous soil
+----------------------------------------------
+Reference solution for 3D heterogeneous benchmark with Van Genuchten soil model. Provides spatially varying material properties and standard problem setup.
 
 Reference: Cockett, R., Heagy, L. J., & Haber, E. (2018). Efficient 3D
 inversions using the Richards equation. Computers & Geosciences, 116, 91-102.

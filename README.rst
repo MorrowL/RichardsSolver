@@ -61,7 +61,7 @@ Reproduces Vauclin's 2D test case, which involves the rechange of a water table 
 
 Reference: Vauclin, M., Khanji, D., & Vachaud, G. (1979). Experimental and
 numerical study of a transient, two-dimensional unsaturated-saturated water
-table recharge problem. Water Resources Research, 15(5), 1089-1101.
+table recharge problem. Water Resources Research, 15(5), 1089-1101. https://doi.org/10.1029/WR015i005p01089
 
 3D water infultration into heterogeneuous soil
 ----------------------------------------------
@@ -69,24 +69,21 @@ Reference solution for 3D heterogeneous benchmark with Van Genuchten soil model.
 
 Reference: Cockett, R., Heagy, L. J., & Haber, E. (2018). Efficient 3D
 inversions using the Richards equation. Computers & Geosciences, 116, 91-102.
+https://doi.org/10.1016/j.cageo.2018.04.006
 
 Documentation
 =============
 
 For complete API reference and examples, see the docstrings in each module:
 
-- ``gwassess.tracy`` - Tracy 2D analytical solutions
-- ``gwassess.vauclin`` - Vauclin 2D reference solution
-- ``gwassess.cockett`` - Cockett 3D reference solution
-
 License
 =======
 
-gwassess is licensed under the GNU Lesser General Public License v3 (LGPLv3).
+RichardsSolver is licensed under the GNU Lesser General Public License v3 (LGPLv3).
 See LICENSE.txt for details.
 
 Contributing
 ============
 
 Contributions are welcome! Please submit issues and pull requests on GitHub:
-https://github.com/g-adopt/gwassess
+https://github.com/MorrowL/RichardsSolver/

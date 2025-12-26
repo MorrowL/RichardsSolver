@@ -3,6 +3,7 @@ from surface_mesh import *
 from ufl import *
 from firedrake import *
 from firedrake.petsc import PETSc
+from firedrake.__future__ import interpolate
 
 
 def setup_mesh_and_spaces():
@@ -12,7 +13,7 @@ def setup_mesh_and_spaces():
     # Function space of horizontal and vertical
     horiz_elt = FiniteElement("DG", triangle, 1)
     vert_elt = FiniteElement("DG", interval, 1)
-    horizontal_resolution = 3000
+    horizontal_resolution = 4000
     number_layers = 300
 
     # Details of mesh extrusion
@@ -39,9 +40,7 @@ def setup_mesh_and_spaces():
     PETSc.Sys.Print("Horizontal resolution:", horizontal_resolution)
     PETSc.Sys.Print("Number of layers:", number_layers)
 
-    ihbiub
-
-    return mesh, V, W
+    return mesh, V, W, mesh_coords
 
 
 def define_time_parameters():
@@ -60,7 +59,7 @@ def define_time_parameters():
     return t_final, dt, time_integrator
 
 
-def define_soil_curves(mesh, V):
+def define_soil_curves(mesh, V, mesh_coords):
 
     Vcg = FunctionSpace(mesh, 'CG', 1)
 
@@ -111,20 +110,28 @@ def define_soil_curves(mesh, V):
     return soil_curve
 
 
-def setup_boundary_conditions(mesh, time_var):
+def setup_boundary_conditions(mesh, time_var, V, mesh_coords):
 
     """Defines the boundary conditions dictionary."""
 
     x = SpatialCoordinate(mesh)
     X, Y, Z = x[0], x[1], x[2]
 
+    Vcg = FunctionSpace(mesh, 'CG', 1)
+
     watertable_cg = Function(Vcg)
     watertable_cg.dat.data[:] = data_2_function(mesh_coords, 'water_table.csv')
-    watertable = Function(Vdq, name='WaterTable').interpolate(watertable_cg)
+    watertable = Function(V, name='WaterTable').interpolate(watertable_cg)
 
     rainfall_cg = Function(Vcg)
     rainfall_cg.dat.data[:] = data_2_function(mesh_coords, 'rainfall_data.csv')
-    rainfall = Function(Vdq, name='Rainfall').interpolate(watertable_cg)
+    rainfall = Function(V, name='Rainfall').interpolate(watertable_cg)
+
+    elevation_cg = Function(Vcg)
+    elevation_cg.dat.data[:] = data_2_function(mesh_coords, 'elevation_data.csv')
+    elevation = Function(V, name='elevation').interpolate(elevation_cg)
+
+    depth = Function(V, name='depth').interpolate(elevation - Z)
 
     # Extraction points
     spread = 50000000
@@ -146,21 +153,21 @@ def setup_boundary_conditions(mesh, time_var):
 
 def main():
 
-    mesh, V, W = setup_mesh_and_spaces()
+    mesh, V, W, mesh_coords = setup_mesh_and_spaces()
     t_final, dt, time_integrator = define_time_parameters()
-    soil_curves = define_soil_curves(mesh)
+    soil_curves = define_soil_curves(mesh, V, mesh_coords)
 
     time_var = Constant(0.0)
 
     x = SpatialCoordinate(mesh)
-    X, Z = x[0], x[1]
+    X, Y, Z = x[0], x[1], x[2]
 
     # Initial condition of water table at z = 0.65 m
     Vcg = FunctionSpace(mesh, 'CG', 1)
 
     watertable_cg = Function(Vcg)
     watertable_cg.dat.data[:] = data_2_function(mesh_coords, 'water_table.csv')
-    watertable = Function(Vdq, name='WaterTable').interpolate(watertable_cg)
+    watertable = Function(V, name='WaterTable').interpolate(watertable_cg)
 
     elevation_cg = Function(Vcg)
     elevation_cg.dat.data[:] = data_2_function(mesh_coords, 'elevation_data.csv')
@@ -176,7 +183,7 @@ def main():
     moisture_content = soil_curves.moisture_content
     theta = Function(V, name='MoistureContent').interpolate(moisture_content(h))
 
-    richards_bcs = setup_boundary_conditions(mesh, time_var)
+    richards_bcs = setup_boundary_conditions(mesh, time_var, V, mesh_coords)
 
     solver_parameters = {'ksp_type': 'gmres', 'mat_type': 'aij', 'pc_type': 'python', 'pc_python_type': 'firedrake.AssembledPC', 'assembled_pc_type': 'bjacobi', 'assembled_sub_pc_type': 'ilu', 'ksp_rtol': 1e-05}
 
@@ -201,7 +208,6 @@ def main():
     nonlinear_iteration = 0
     linear_iterations = 0
     initial_mass = assemble(theta*eq.dx)
-    start_time = time.perf_counter()
 
     while current_time < t_final:
 

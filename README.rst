@@ -8,13 +8,13 @@ RichardsSolver is a Firedrake based package (https://www.firedrakeproject.org/) 
 Installation
 ============
 
-RichardsSolver can be clones from Github via:
+This package first requires a working installation of Firedrake, with instructions found at https://www.firedrakeproject.org/install.html. RichardsSolver can be installed from Github via:
 
 .. code-block:: bash
 
     pip install git+https://github.com/MorrowL/RichardsSolver.git
 
-or for the whole package (inc. demos)
+or to clone the whole package (inc. demos)
 
 .. code-block:: bash
 

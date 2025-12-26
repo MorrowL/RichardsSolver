@@ -1,5 +1,5 @@
 import numpy as np
-import scipy.io
+import pandas as pd
 import firedrake as fd
 from firedrake.petsc import PETSc
 from scipy.interpolate import griddata
@@ -11,15 +11,12 @@ def data_2_function(mesh_coords, file_name):
     x_coord = mesh_coords[:, 0]
     y_coord = mesh_coords[:, 1]
     elevation = x_coord*0
-    distance = elevation + 100000
 
-    mat = scipy.io.loadmat(file_name)
-    x = mat.get('x')
-    x_surface = x.flatten()
-    y = mat.get('y')
-    y_surface = y.flatten()
-    z = mat.get('z')
-    z_surface = z.flatten()
+    data = pd.read_csv(file_name)
+
+    x_surface = data['x']
+    y_surface = data['y']
+    z_surface = data['z']
 
     points = np.vstack((x_surface, y_surface))
     points = points.T

@@ -2,12 +2,10 @@ import firedrake as fd
 from firedrake.petsc import PETSc
 
 
-def advance_solution(eq, h, richards_solver):
+def advance_solution(eq, h, h_old, richards_solver):
 
     mesh = eq.mesh
     x = fd.SpatialCoordinate(mesh)
-
-    h_old = fd.Function(eq.trial_space).assign(h)
 
     relative_conductivity = eq.soil_curves.relative_conductivity
     q = eq.q
@@ -27,3 +25,4 @@ def advance_solution(eq, h, richards_solver):
     snes = richards_solver.snes
 
     return h, q, snes
+

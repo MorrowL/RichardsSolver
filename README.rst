@@ -12,6 +12,12 @@ RichardsSolver can be clones from Github via:
 
 .. code-block:: bash
 
+    pip install git+https://github.com/MorrowL/RichardsSolver.git
+
+or for the whole package (inc. demos)
+
+.. code-block:: bash
+
     git clone https://github.com/MorrowL/RichardsSolver.git
     pip install -e RichardsSolver
 

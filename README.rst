@@ -69,6 +69,12 @@ richards_bcs is dictionary that contains information about boundary conditions. 
 
 The numbers 1, 2, 3 and 4 correspond to the boundary IDs of the mesh. Note the boundary conditions can be spatially and/or temporally dependent.
 
+solver_parameters are the parameters to solve the system of equations. Users can choose 'default' (recommended), 'exact', 'iterative', or provide a dictionary of solver options.
+
+time_integrator is a string that specifies how Richards' equation is integrated in time. Current options are 'BackwardEuler', 'CrankNicolson', or 'SemiImplicit'.
+
+quad_degree specifies quadrature degree, where 2p + 1 is recommended with p being the polynomial degree of V.
+
 Available demos
 ===================
 

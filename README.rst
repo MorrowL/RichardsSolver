@@ -26,29 +26,33 @@ Usage
 
 Basic usage example for the Tracy 2D analytical solution:
 
+RichardsSolver is based on Firedrake, and as such, we recommend users to familiarise themselves with a few of the tutorials available at https://www.firedrakeproject.org/documentation.html. To perform simulations, users initialise the solver via
+
 .. code-block:: python
 
-    import gwassess
-    import numpy as np
+    eq = RichardsSolver(V=V,
+                        W=W,
+                        mesh=mesh,
+                        soil_curves=soil_curves,
+                        bcs=richards_bcs,
+                        solver_parameters=solver_parameters,
+                        time_integrator=time_integrator,
+                        quad_degree=3)
 
-    # Initialize Tracy solution with soil and domain parameters
-    solution = gwassess.TracyRichardsSolution2D(
-        alpha=0.328,      # Exponential soil parameter [1/m]
-        hr=-15.24,        # Reference pressure head [m]
-        L=15.24,          # Domain size [m]
-        theta_r=0.15,     # Residual water content [-]
-        theta_s=0.45,     # Saturated water content [-]
-        Ks=1.0e-05        # Saturated hydraulic conductivity [m/s]
+where V is the function of pressure head, W is the vector function space for the volumetric flux (does not influence solution). For the soil curves, users have a choice of several hydrological models (HaverkampCurve, ExponentialCurve, and VanGenutchenCurve). An example of how the soil_curves dictionary is made:
+
+.. code-block:: python
+
+    soil_curve = HaverkampCurve(
+        theta_r=0.025,         # Residual water content [-]
+        theta_s=0.40,          # Saturated water content [-]
+        Ks=Ks,                 # Saturated hydraulic conductivity [m/s]
+        alpha=0.44,            # Fitting parameter [m]
+        beta=1.2924,           # Fitting parameter [-]
+        A=0.0104,              # Fitting parameter [m]
+        gamma=1.5722,          # Fitting parameter [-]
+        Ss=0,                  # Specific storage coefficient [1/m]
     )
-
-    # Evaluate pressure head at a point
-    x, y, t = 7.62, 7.62, 1000.0
-    h = solution.pressure_head_specified_head(x, y, t)
-    print(f"Pressure head at ({x}, {y}) at time {t}: {h:.6f} m")
-
-    # Or use Cartesian coordinates
-    X = [7.62, 7.62]
-    h = solution.pressure_head_cartesian(X, t, bc_type='specified_head')
 
 Available demos
 ===================

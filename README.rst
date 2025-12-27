@@ -5,6 +5,10 @@ A numerical package for solving Richards' equation
 
 RichardsSolver is a Firedrake based package (https://www.firedrakeproject.org/) for numerically solving Richards' equation in two- and three-dimensional domains.
 
+.. math::
+
+   \int_{a}^{b} f(x) \, dx = F(b) - F(a)
+
 Installation
 ============
 

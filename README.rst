@@ -46,13 +46,28 @@ where V is the function of pressure head, W is the vector function space for the
     soil_curve = HaverkampCurve(
         theta_r=0.025,         # Residual water content [-]
         theta_s=0.40,          # Saturated water content [-]
-        Ks=Ks,                 # Saturated hydraulic conductivity [m/s]
+        Ks=1e-05,              # Saturated hydraulic conductivity [m/s]
         alpha=0.44,            # Fitting parameter [m]
         beta=1.2924,           # Fitting parameter [-]
         A=0.0104,              # Fitting parameter [m]
         gamma=1.5722,          # Fitting parameter [-]
         Ss=0,                  # Specific storage coefficient [1/m]
     )
+
+richards_bcs is dictionary that contains information about boundary conditions. Boundary conditions can either be Diretchlet or Neumann (where the volumetric flux normal to the boundary is specified. An example dictionary: 
+
+.. code-block:: python
+    
+    # Boundary conditions
+    boundary_ids = get_boundary_ids(mesh)
+    richards_bcs = {
+        1 {'flux': 0.0},    # Left
+        2: {'h': -10.0},    # Right
+        3 {'flux': 0.0},    # Bottom
+        4: {'flux': 1e-06}, # Top
+    }
+
+The numbers 1, 2, 3 and 4 correspond to the boundary IDs of the mesh. Note the boundary conditions can be spatially and/or temporally dependent.
 
 Available demos
 ===================

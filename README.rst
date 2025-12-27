@@ -7,7 +7,7 @@ RichardsSolver is a Firedrake based package (https://www.firedrakeproject.org/) 
 
 .. math::
 
-   \int_{a}^{b} f(x) \, dx = F(b) - F(a)
+   \frac{\partial \theta}{\partial t} + \div q = 0 where q = -K(h) \grad (h + z)
 
 Installation
 ============

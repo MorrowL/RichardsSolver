@@ -5,9 +5,12 @@ A numerical package for solving Richards' equation
 
 RichardsSolver is a Firedrake based package (https://www.firedrakeproject.org/) for numerically solving Richards' equation in two- and three-dimensional domains.
 
-.. math::
+.. image:: richards_equation.jpg
+   :width: 200
+   :alt: Richards' equation
+   :align: center
 
-   \frac{\partial \theta}{\partial t} + \div q = 0 where q = -K(h) \grad (h + z)
+where theta is the moisture content, h is the pressure head, and K is the relative conductivity.
 
 Installation
 ============

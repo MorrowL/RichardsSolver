@@ -6,91 +6,130 @@ from firedrake.petsc import PETSc
 from firedrake.__future__ import interpolate
 
 
+"""
+Lower Murrumbidgee River Basin
+
+This script simulates groundwater flow using a 3D Discontinuous Galerkin (DG) 
+discretization on an extruded mesh. It accounts for terrain-following coordinates
+and depth-dependent soil properties.
+
+"""
+
+
+def load_spatial_field(name, filename, V, Vcg, mesh_coords):
+
+    """Load a CSV field and interpolate it into the DG space V."""
+    cg_field = Function(Vcg)
+    cg_field.dat.data[:] = data_2_function(mesh_coords, filename)
+    return Function(V, name=name).interpolate(cg_field)
+
+
 def setup_mesh_and_spaces():
 
-    """Defines the computational mesh and function spaces."""
+    """ 
+    Build the extruded 3D mesh, apply the terrain-following coordinate transform, and construct all required function spaces and spatial fields. 
+    """
 
-    # Function space of horizontal and vertical
+    # --- Function spaces ---
     horiz_elt = FiniteElement("DG", triangle, 1)
-    vert_elt = FiniteElement("DG", interval, 1)
-    horizontal_resolution = 4000
-    number_layers = 300
-
-    # Details of mesh extrusion
-    surface_mesh(horizontal_resolution)
+    vert_elt  = FiniteElement("DG", interval, 1)
+    horizontal_resolution = 3000
+    number_layers = 400
     layer_height = 1/number_layers
+
+    # --- Build extruded mesh ---
+    surface_mesh(horizontal_resolution)
     mesh2D = Mesh('MurrumbidgeeMeshSurface.msh')
-    mesh = ExtrudedMesh(mesh2D, number_layers, layer_height=layer_height, extrusion_type='uniform', name='mesh')
+
+    mesh = ExtrudedMesh(
+        mesh2D,
+        number_layers,
+        layer_height=layer_height,
+        extrusion_type='uniform',
+        name='mesh'
+        )
 
     W = VectorFunctionSpace(mesh, 'CG', 1)
     X = assemble(interpolate(mesh.coordinates, W))
     mesh_coords = X.dat.data_ro
 
-    # Transform the z coordinate such that top and bottom are the points given by elevation_data.csv and bedrock_data.csv
-    z = mesh_coords[:, 2]
-    bedrock = data_2_function(mesh_coords, 'bedrock_data.csv')
-    elevation = data_2_function(mesh_coords, 'elevation_data.csv')
-    mesh.coordinates.dat.data[:, 2] = bedrock*z + elevation - bedrock
+    # --- Terrain-Following Coordinate Transformation ---
+    z = mesh_coords[:, 2]  # uniform [0,1] vertical coordinate
+
+    bedrock_raw   = data_2_function(mesh_coords, 'bedrock_data.csv')
+    elevation_raw = data_2_function(mesh_coords, 'elevation_data.csv')
+
+    # Map z ∈ [0,1] to physical depth between bedrock and surface
+    mesh.coordinates.dat.data[:, 2] = bedrock_raw*z + elevation_raw - bedrock_raw
 
     elt = TensorProductElement(horiz_elt, vert_elt)
-    V = FunctionSpace(mesh, elt)
-    W = VectorFunctionSpace(mesh, elt)
+    V   = FunctionSpace(mesh, elt)
+    W   = VectorFunctionSpace(mesh, elt)
 
     PETSc.Sys.Print("The number of degrees of freedom is:", V.dim())
     PETSc.Sys.Print("Horizontal resolution:", horizontal_resolution)
     PETSc.Sys.Print("Number of layers:", number_layers)
 
-    return mesh, V, W, mesh_coords
+    # --- Load spatial fields (elevation, layers, rainfall, etc.) ---
+    Vcg = FunctionSpace(mesh, 'CG', 1)
+    x = SpatialCoordinate(mesh)
+
+    elevation    = load_spatial_field("Elevation",    "elevation_data.csv", V, Vcg, mesh_coords)
+    shallowLayer = load_spatial_field("shallowLayer", "shallow_layer.csv",  V, Vcg, mesh_coords)
+    lowerLayer   = load_spatial_field("lowerLayer",   "lower_layer.csv",    V, Vcg, mesh_coords)
+    bedrock      = load_spatial_field("Bedrock",      "bedrock_data.csv",   V, Vcg, mesh_coords)
+    watertable   = load_spatial_field("WaterTable",   "water_table.csv",    V, Vcg, mesh_coords)
+    rainfall     = load_spatial_field("Rainfall",     "rainfall_data.csv",  V, Vcg, mesh_coords)
+    depth        = Function(V, name='depth').interpolate(elevation - x[2])
+
+    # Package spatial data
+    spatial_data = {
+        'depth': depth,
+        'elevation': elevation,
+        'bedrock': bedrock,
+        'lowerLayer': lowerLayer,
+        'shallowLayer': shallowLayer,
+        'rainfall': rainfall,
+        'watertable': watertable
+    }
+
+    return mesh, V, W, spatial_data
 
 
 def define_time_parameters():
 
     """Sets simulation time and time-stepping constants."""
 
-    t_final_years = 7.0
+    t_final_years = 30.0
     t_final = t_final_years * 3.156e+7  # in seconds
 
     dt_days = 7.0
-    dt = Constant(dt_days * 86400)  # s
+    dt = Constant(dt_days * 86400)  # in seconds
 
-    time_var = Constant(0.0)
     time_integrator = "BackwardEuler"
 
     return t_final, dt, time_integrator
 
 
-def define_soil_curves(mesh, V, mesh_coords):
+def define_soil_curves(mesh, V, spatial_data):
 
-    Vcg = FunctionSpace(mesh, 'CG', 1)
+    """Specifies depth-dependent hydraulic properties using Haverkamp curves.
+    
+    Uses tanh-based indicator functions to transition between soil layers 
+    (Shallow, Lower, Bedrock) smoothly to assist nonlinear solver convergence.
+    """
 
-    x = SpatialCoordinate(mesh)
-    X, Y, Z = x[0], x[1], x[2]
+    # Extract relavant spatial profiles
+    shallowLayer = spatial_data['shallowLayer']
+    lowerLayer  = spatial_data['lowerLayer']
+    depth       = spatial_data['depth']
 
-    # Construct some functions from external data
-    elevation_cg = Function(Vcg)
-    elevation_cg.dat.data[:] = data_2_function(mesh_coords, 'elevation_data.csv')
-    elevation = Function(V, name='elevation').interpolate(elevation_cg)
-
-    shallowLayer_cg = Function(Vcg)
-    shallowLayer_cg.dat.data[:] = data_2_function(mesh_coords, 'shallow_layer.csv')
-    shallowLayer = Function(V, name='ShallowLayer').interpolate(shallowLayer_cg)
-
-    lowerLayer_cg = Function(Vcg)
-    lowerLayer_cg.dat.data[:] = data_2_function(mesh_coords, 'lower_layer.csv')
-    lowerLayer = Function(V, name='LowerLayer').interpolate(lowerLayer_cg)
-
-    bedrock_cg = Function(Vcg)
-    bedrock_cg.dat.data[:] = data_2_function(mesh_coords, 'bedrock_data.csv')
-    bedrock = Function(V, name='Bedrock').interpolate(bedrock_cg)
-
-    depth = Function(V, name='depth').interpolate(elevation - Z)
-
-    # Indicator functions of where each layer is
+    # Indicator functions I1, I2 transition between shallow, lower, and bedrock layers.
     delta = 1
     I1 = 0.5*(1 + tanh(delta*(shallowLayer - depth)))
     I2 = 0.5*(1 + tanh(delta*(lowerLayer - depth)))
-    I3 = 0.5*(1 + tanh(delta*(bedrock - depth)))
 
+    # We employ a depth (in metres) dependent porosity and water saturation based on emperical formula
     S_depth = 1/((1 + 0.000071*depth)**5.989)     # Depth dependent porosity
     K_depth = (1 - depth / (58 + 1.02*depth))**3  # Depth dependent conductivity
     Ks = Function(V, name='SaturatedConductivity').interpolate(K_depth*(2.5e-05*I1 + 1e-03*(1 - I1)*I2 + 5e-04*(1-I2)))
@@ -104,48 +143,45 @@ def define_soil_curves(mesh, V, mesh_coords):
         beta=1.2924,           # Fitting parameter [-]
         A=0.0104,              # Fitting parameter [m]
         gamma=1.5722,          # Fitting parameter [-]
-        Ss=0,              # Specific storage coefficient [1/m]
+        Ss=0,                  # Specific storage coefficient [1/m]
     )
 
     return soil_curve
 
 
-def setup_boundary_conditions(mesh, time_var, V, mesh_coords):
+def setup_boundary_conditions(mesh, time_var, spatial_data):
 
-    """Defines the boundary conditions dictionary."""
+    """
+    Produces a dictionary that describes the imposed boundary conditions:
+        top - rainfall imposed from external data
+        bottom - localised extraction points and bedrock (no-flux) elsewhere
+        sides - water table is fixed
+    """
 
     x = SpatialCoordinate(mesh)
-    X, Y, Z = x[0], x[1], x[2]
 
-    Vcg = FunctionSpace(mesh, 'CG', 1)
+    watertable = spatial_data['watertable']
+    rainfall = spatial_data['rainfall']
+    depth = spatial_data['depth']
 
-    watertable_cg = Function(Vcg)
-    watertable_cg.dat.data[:] = data_2_function(mesh_coords, 'water_table.csv')
-    watertable = Function(V, name='WaterTable').interpolate(watertable_cg)
+    rain_scaling = 0.14 * 3.171e-11  # Percentage of rainfall that enters ground
 
-    rainfall_cg = Function(Vcg)
-    rainfall_cg.dat.data[:] = data_2_function(mesh_coords, 'rainfall_data.csv')
-    rainfall = Function(V, name='Rainfall').interpolate(watertable_cg)
+    # Extraction/sink points
+    spread = 5e07  # defines the radius of influence for each pumping well.
+    extraction_indicator = 0*x[0]
 
-    elevation_cg = Function(Vcg)
-    elevation_cg.dat.data[:] = data_2_function(mesh_coords, 'elevation_data.csv')
-    elevation = Function(V, name='elevation').interpolate(elevation_cg)
+    # Coordinates of extraction sites
+    xPts = np.array([ 1.7e05, 2.2e05, 2.4e05, 2.0e05, 1.6e05, 1.7e05, 2.2e05, 2.5e05, 2.0e05, 1.5e05, 2.3e05, 1.0e05, 2.0e05, 1.9e05, 1.9e05, 1.9e05, 1.6e05, 2.6e05, 1.2e05, 2.5e05 ])
+    yPts = np.array([ 8.0e04, 4.3e04, 4.2e04, 7.3e04, 3.5e04, 9.3e04, 6.0e04, 6.5e04, 6.0e04, 5.0e04, 9.0e04, 6.5e04, 2.0e04, 1.0e05, 8.5e04, 4.4e04, 6.0e04, 5.5e04, 6.5e04, 2.2e04 ])
 
-    depth = Function(V, name='depth').interpolate(elevation - Z)
-
-    # Extraction points
-    spread = 50000000
-    Ind = 0
-    xPts = np.array([1.7e05, 2.2e05, 2.4e05, 2.0e05, 1.6e05, 1.7e05, 2.2e05, 2.5e05, 2.0e05, 1.5e05, 2.3e05, 1.0e05, 2.0e05, 1.9e05, 1.9e05, 1.9e05, 1.6e05, 2.6e05, 1.2e05, 2.5e05])
-    yPts = np.array([8.0e04, 4.3e04, 4.2e04, 7.3e04, 3.5e04, 9.3e04, 6.0e04, 6.5e04, 6.0e04, 5.0e04, 9.0e04, 6.5e04, 2.0e04, 1.0e05, 8.5e04, 4.4e04, 6.0e04, 5.5e04, 6.5e04, 2.2e04])
-    for ii in range(20):
-        Ind = Ind + exp((-(x[0]-xPts[ii])**2-(x[1]-yPts[ii])**2)/spread)
-
+    for x0, y0 in zip(xPts, yPts):
+        r2 = (x[0] - x0)**2 + (x[1] - y0)**2 
+        extraction_indicator += exp(-r2 / spread)
 
     richards_bcs = {
-        1: {'h': depth - watertable},
-        'bottom': {'flux': 3e-9*Ind},
-        'top': {'flux': 0.14*3.171e-11*rainfall},
+        1: {'h': depth - watertable},  # Side boudaries
+        'bottom': {'flux': 3e-9*extraction_indicator},
+        'top': {'flux': rain_scaling*rainfall},
     }
 
     return richards_bcs
@@ -153,37 +189,25 @@ def setup_boundary_conditions(mesh, time_var, V, mesh_coords):
 
 def main():
 
-    mesh, V, W, mesh_coords = setup_mesh_and_spaces()
-    t_final, dt, time_integrator = define_time_parameters()
-    soil_curves = define_soil_curves(mesh, V, mesh_coords)
-
     time_var = Constant(0.0)
 
-    x = SpatialCoordinate(mesh)
-    X, Y, Z = x[0], x[1], x[2]
+    mesh, V, W, spatial_data = setup_mesh_and_spaces()
+    t_final, dt, time_integrator = define_time_parameters()
+    soil_curves = define_soil_curves(mesh, V, spatial_data)
+    richards_bcs = setup_boundary_conditions(mesh, time_var, spatial_data)
 
-    # Initial condition of water table at z = 0.65 m
-    Vcg = FunctionSpace(mesh, 'CG', 1)
-
-    watertable_cg = Function(Vcg)
-    watertable_cg.dat.data[:] = data_2_function(mesh_coords, 'water_table.csv')
-    watertable = Function(V, name='WaterTable').interpolate(watertable_cg)
-
-    elevation_cg = Function(Vcg)
-    elevation_cg.dat.data[:] = data_2_function(mesh_coords, 'elevation_data.csv')
-    elevation = Function(V, name='elevation').interpolate(elevation_cg)
-
-    depth = Function(V, name='depth').interpolate(elevation - Z)
+    # Define initial condition
+    depth      = spatial_data['depth']
+    watertable = spatial_data['watertable']
 
     initial_head = Function(V, name="InitialCondition").interpolate(depth - watertable)
-    h = Function(V, name="PressureHead").assign(initial_head)
+
+    h     = Function(V, name="PressureHead").assign(initial_head)
     h_old = Function(V, name="OldSolution").assign(h)
-    q = Function(W, name='VolumetricFlux')
+    q     = Function(W, name='VolumetricFlux')
 
     moisture_content = soil_curves.moisture_content
     theta = Function(V, name='MoistureContent').interpolate(moisture_content(h))
-
-    richards_bcs = setup_boundary_conditions(mesh, time_var, V, mesh_coords)
 
     solver_parameters = {'ksp_type': 'gmres', 'mat_type': 'aij', 'pc_type': 'python', 'pc_python_type': 'firedrake.AssembledPC', 'assembled_pc_type': 'bjacobi', 'assembled_sub_pc_type': 'ilu', 'ksp_rtol': 1e-05}
 
@@ -202,14 +226,17 @@ def main():
     # Solver Instantiation
     richards_solver = richardsSolver(h, h_old, time_var, dt, eq)
 
-    current_time = 0.0
-    exterior_flux = 0
-    timestep_number = 0
-    nonlinear_iteration = 0
-    linear_iterations = 0
-    initial_mass = assemble(theta*eq.dx)
+    current_time        = 0.0
+    
+    exterior_flux       = 0.0
+    initial_mass        = assemble(theta*eq.dx)
 
-    while current_time < t_final:
+    nonlinear_iteration = 0.0
+    linear_iterations   = 0.0
+
+    nsteps = int(round(t_final / float(dt)))
+
+    for timestep_number in range(nsteps):
 
         time_var.assign(current_time)
 
@@ -217,22 +244,35 @@ def main():
         h, q, snes = advance_solution(eq, h, h_old, richards_solver)
         current_time += float(dt)
 
-        timestep_number += 1
-        exterior_flux += assemble(dt*dot(q, -eq.n)*eq.ds)
+        exterior_flux       += assemble(dt*dot(q, -eq.n)*eq.ds)
         nonlinear_iteration += snes.getIterationNumber()
-        linear_iterations += snes.ksp.getIterationNumber()
+        linear_iterations   += snes.ksp.getIterationNumber()
+
         theta.interpolate(moisture_content(h))
 
-        PETSc.Sys.Print(f"Current time [h]: {current_time/3600}")   
-        PETSc.Sys.Print(f"Nonlinear iterations: {snes.getIterationNumber()}")
-        PETSc.Sys.Print(f"Linear iterations: {snes.ksp.getIterationNumber()}")
-        PETSc.Sys.Print(f"Water content: {assemble(theta*eq.dx)}")
-        PETSc.Sys.Print("")
+        PETSc.Sys.Print( f"t = {current_time/3600:.2f} h | "
+                        f"NL iters = {snes.getIterationNumber()} | "
+                        f"L iters = {snes.ksp.getIterationNumber()} | "
+                        f"Water content = {assemble(theta*eq.dx)} | "
+                        f"Exterior flux = {exterior_flux}"
+                        )
 
     final_mass = assemble(theta*eq.dx)
     PETSc.Sys.Print(f"Initial mass: {initial_mass}")
     PETSc.Sys.Print(f"Final mass: {final_mass}")
     PETSc.Sys.Print(f"Exterior flux: {exterior_flux}")
+
+    with CheckpointFile("DG11_dx=3000_layers=300.h5", 'w') as afile:
+        afile.save_mesh(mesh)
+        afile.save_function(h)
+        afile.save_function(theta)
+        afile.save_function(q)
+        afile.save_function(depth)
+
+
+if __name__ == "__main__":
+    main()
+
 
 
 if __name__ == "__main__":

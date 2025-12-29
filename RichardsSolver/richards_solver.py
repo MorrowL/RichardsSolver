@@ -82,19 +82,19 @@ def diffusion_term(hDiff: fd.Function, K: fd.Function, K_old: fd.Function, eq):
     bcs = eq.bcs
 
     # Volume integral
-    F = fd.inner(grad_v, K * fd.grad(h_mid)) * eq.dx
+    F = fd.inner(grad_v, K * fd.grad(hDiff)) * eq.dx
 
     # SIPG
     sigma = interior_penalty_factor(eq, shift=0)
     sigma_int = sigma * fd.avg(fd.FacetArea(eq.mesh) / fd.CellVolume(eq.mesh))
 
     jump_v = fd.jump(v, eq.n) 
-    jump_h = fd.jump(h_mid, eq.n) 
+    jump_h = fd.jump(hDiff, eq.n) 
     avg_K  = fd.avg(K_old)
 
     F += sigma_int * fd.inner(jump_v, avg_K * jump_h) * eq.dS 
     F -= fd.inner(fd.avg(K_old * grad_v), jump_h) * eq.dS 
-    F -= fd.inner(jump_v, fd.avg(K_old * fd.grad(h_mid))) * eq.dS
+    F -= fd.inner(jump_v, fd.avg(K_old * fd.grad(hDiff))) * eq.dS
 
     # Impose bcs within the weak formulation
     for bc_idx, bc_info in bcs.items():

@@ -28,4 +28,5 @@ from .utilities import (
     CombinedSurfaceMeasure,
     interior_penalty_factor,
     cell_edge_integral_ratio,
+    load_spatial_field,
 )

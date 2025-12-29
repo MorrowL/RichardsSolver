@@ -14,13 +14,13 @@ def advance_solution(eq, h, h_old, richards_solver):
     match eq.time_integrator:
         case "BackwardEuler":
             K = relative_conductivity(h)
-            q.interpolate(-K*fd.grad(h + x[eq.dimen-1]))
+            q.interpolate(-K*fd.grad(h + x[eq.dim-1]))
         case "ImplicitMidpoint":
             K = relative_conductivity((h+h_old)/2)
-            q.interpolate(-K*fd.grad((h+h_old)/2 + x[eq.dimen-1]))
+            q.interpolate(-K*fd.grad((h+h_old)/2 + x[eq.dim-1]))
         case "CrankNicolson":
             K = (relative_conductivity(h) + relative_conductivity(h_old))/2
-            q.interpolate(-K*fd.grad((h+h_old)/2 + x[eq.dimen-1]))
+            q.interpolate(-K*fd.grad((h+h_old)/2 + x[eq.dim-1]))
 
     snes = richards_solver.snes
 

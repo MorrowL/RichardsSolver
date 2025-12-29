@@ -102,3 +102,10 @@ class CombinedSurfaceMeasure(ufl.Measure):
         Here the CombinedSurfaceMeasure ds is not called, instead we just split it up as below."""
         return other*self.ds_v + other*self.ds_t + other*self.ds_b
 
+
+def load_spatial_field(name, filename, V, Vcg, mesh_coords):
+
+    """Load a CSV field and interpolate it into the DG space V."""
+    cg_field = fd.Function(Vcg)
+    cg_field.dat.data[:] = data_2_function(mesh_coords, filename)
+    return fd.Function(V, name=name).interpolate(cg_field)

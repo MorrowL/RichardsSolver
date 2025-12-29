@@ -30,7 +30,7 @@ class RichardsSolver(ABC):
         self.trial_space = V
         self.test_function = fd.TestFunction(V)
 
-        self.dimen = mesh.topological_dimension()
+        self.dim = mesh.topological_dimension()
         self.n = fd.FacetNormal(mesh)
 
         self.q = fd.Function(W, name="VolumetricFlux")
@@ -39,6 +39,10 @@ class RichardsSolver(ABC):
         self.bcs = bcs
 
         if quad_degree == 0:
+            
+            degree = V.ufl_element().degree()
+            if not isinstance(degree, int):
+                degree = max(degree)
             quad_degree = 2 * max(V.ufl_element().degree()) + 1
         self.quad_degree = quad_degree
 

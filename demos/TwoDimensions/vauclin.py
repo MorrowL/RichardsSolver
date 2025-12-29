@@ -11,7 +11,7 @@ Here we reproduce the test case presented in:
     Experimental and numerical study of a transient, two-dimensional unsaturated-saturated water table recharge problem
     https://doi.org/10.1029/WR015i005p01089
 The simulation is performed in a domain of 3 x 2 metres, and the initial
-condition is chosen such that the region z <= 0.65 m is fully satured ($\theta =
+condition is chosen such that the region z <= 0.65 m is fully saturated ($\theta =
 \theta_s$), $h(t=0) = z - 0.65$ m. For the boundary conditions, the bottom and left boundary are no flux ($q cdot n = 0$), the right boundary fixed the height of the water table ($h = z - 0.65$ m). For the top boundary, water is injected at a rate of 14.8 cm/hour  in the region where x <= 0.5 m and 0 otherwise. The simulation is concluded after 8 hours
 """
 
@@ -71,16 +71,15 @@ def setup_boundary_conditions(mesh, time_var):
     recharge_rate = Constant(4.11e-05) # m/s 
 
     # Define the recharge region (0 <= x <= 0.5 m) using tanh smoothing
-    recharge_region_indicator = (
-        0.5 * (1.0 + tanh(10 * (X + 0.50)))
-        - 0.5 * (1.0 + tanh(10 * (X - 0.50)))
-    )
+    left_edge = 0.5 * (1 + tanh(10 * (X + 0.50))) 
+    right_edge = 0.5 * (1 + tanh(10 * (X - 0.50))) 
+    recharge_region_indicator = left_edge - right_edge
 
     top_flux = tanh(0.000125 * time_var) * recharge_rate * recharge_region_indicator
 
     richards_bcs = {
         1: {'flux': 0.0},       # Left boundary
-        2: {'h': 0.65 - Z},     # Right boundary
+        2: {'h': 0.65 - Z},     # Right boundary: fixed water table at z = 0.65 m
         3: {'flux': 0.0},       # Bottom boundary
         4: {'flux': top_flux},  # Top boundary
     }
@@ -101,9 +100,10 @@ def main():
 
     # Initial condition of water table at z = 0.65 m
     initial_head = Function(V, name="InitialCondition").interpolate(0.65 - Z)
-    h = Function(V, name="PressureHead").assign(initial_head)
+
+    h     = Function(V, name="PressureHead").assign(initial_head)
     h_old = Function(V, name="OldSolution").assign(h)
-    q = Function(W, name='VolumetricFlux')
+    q     = Function(W, name='VolumetricFlux')
 
     moisture_content = soil_curves.moisture_content
     theta = Function(V, name='MoistureContent').interpolate(moisture_content(h))
@@ -117,8 +117,8 @@ def main():
                         soil_curves=soil_curves,
                         bcs=richards_bcs,
                         solver_parameters='direct',
-                        time_integrator=time_integrator,
-                        quad_degree=5)
+                        time_integrator=time_integrator
+                        )
 
     # Solver Instantiation
     richards_solver = richardsSolver(h, h_old, time_var, dt, eq)
@@ -135,7 +135,7 @@ def main():
         time_var.assign(time)
 
         h_old.assign(h)
-        h, q, snes = advance_solution(eq, h, richards_solver)
+        h, q, snes = advance_solution(eq, h, h_old, richards_solver)
         time += float(dt)
 
         exterior_flux += assemble(dt*dot(q, -eq.n)*eq.ds)

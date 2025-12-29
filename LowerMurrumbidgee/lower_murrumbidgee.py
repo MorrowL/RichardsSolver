@@ -1,9 +1,6 @@
 from RichardsSolver import *
 from surface_mesh import *
-from ufl import *
-from firedrake import *
-from firedrake.petsc import PETSc
-from firedrake.__future__ import interpolate
+import numpy as np
 
 
 """
@@ -16,26 +13,19 @@ and depth-dependent soil properties.
 """
 
 
-def load_spatial_field(name, filename, V, Vcg, mesh_coords):
-
-    """Load a CSV field and interpolate it into the DG space V."""
-    cg_field = Function(Vcg)
-    cg_field.dat.data[:] = data_2_function(mesh_coords, filename)
-    return Function(V, name=name).interpolate(cg_field)
-
-
 def setup_mesh_and_spaces():
 
-    """ 
+    """
     Build the extruded 3D mesh, apply the terrain-following coordinate transform, and construct all required function spaces and spatial fields. 
     """
 
     # --- Function spaces ---
     horiz_elt = FiniteElement("DG", triangle, 1)
     vert_elt  = FiniteElement("DG", interval, 1)
-    horizontal_resolution = 3000
-    number_layers = 400
-    layer_height = 1/number_layers
+
+    horizontal_resolution = 3500
+    number_layers         = 600
+    layer_height          = 1/number_layers
 
     # --- Build extruded mesh ---
     surface_mesh(horizontal_resolution)
@@ -84,14 +74,16 @@ def setup_mesh_and_spaces():
 
     # Package spatial data
     spatial_data = {
-        'depth': depth,
-        'elevation': elevation,
-        'bedrock': bedrock,
-        'lowerLayer': lowerLayer,
+        'depth'       : depth,
+        'elevation'   : elevation,
+        'bedrock'     : bedrock,
+        'lowerLayer'  : lowerLayer,
         'shallowLayer': shallowLayer,
-        'rainfall': rainfall,
-        'watertable': watertable
+        'rainfall'    : rainfall,
+        'watertable'  : watertable
     }
+
+    asdasasd
 
     return mesh, V, W, spatial_data
 
@@ -100,10 +92,10 @@ def define_time_parameters():
 
     """Sets simulation time and time-stepping constants."""
 
-    t_final_years = 30.0
+    t_final_years = 0.25
     t_final = t_final_years * 3.156e+7  # in seconds
 
-    dt_days = 7.0
+    dt_days = 2.0
     dt = Constant(dt_days * 86400)  # in seconds
 
     time_integrator = "BackwardEuler"
@@ -136,14 +128,14 @@ def define_soil_curves(mesh, V, spatial_data):
 
     # Specify the hydrological parameters
     soil_curve = HaverkampCurve(
-        theta_r=0.025,         # Residual water content [-]
-        theta_s=0.40*S_depth,  # Saturated water content [-]
-        Ks=Ks,                 # Saturated hydraulic conductivity [m/s]
-        alpha=0.44,            # Fitting parameter [m]
-        beta=1.2924,           # Fitting parameter [-]
-        A=0.0104,              # Fitting parameter [m]
-        gamma=1.5722,          # Fitting parameter [-]
-        Ss=0,                  # Specific storage coefficient [1/m]
+        theta_r = 0.025,         # Residual water content [-]
+        theta_s = 0.40*S_depth,  # Saturated water content [-]
+        Ks      = Ks,            # Saturated hydraulic conductivity [m/s]
+        alpha   = 0.44,          # Fitting parameter [m]
+        beta    = 1.2924,        # Fitting parameter [-]
+        A       = 0.0104,        # Fitting parameter [m]
+        gamma   = 1.5722,        # Fitting parameter [-]
+        Ss      = 0,             # Specific storage coefficient [1/m]
     )
 
     return soil_curve
@@ -161,8 +153,8 @@ def setup_boundary_conditions(mesh, time_var, spatial_data):
     x = SpatialCoordinate(mesh)
 
     watertable = spatial_data['watertable']
-    rainfall = spatial_data['rainfall']
-    depth = spatial_data['depth']
+    rainfall   = spatial_data['rainfall']
+    depth      = spatial_data['depth']
 
     rain_scaling = 0.14 * 3.171e-11  # Percentage of rainfall that enters ground
 
@@ -176,12 +168,12 @@ def setup_boundary_conditions(mesh, time_var, spatial_data):
 
     for x0, y0 in zip(xPts, yPts):
         r2 = (x[0] - x0)**2 + (x[1] - y0)**2 
-        extraction_indicator += exp(-r2 / spread)
+        extraction_indicator -= exp(-r2 / spread)
 
     richards_bcs = {
-        1: {'h': depth - watertable},  # Side boudaries
-        'bottom': {'flux': 3e-9*extraction_indicator},
-        'top': {'flux': rain_scaling*rainfall},
+        1        : {'h' : depth - watertable},               # Side boudaries
+        'bottom' : {'flux': 3e-9*extraction_indicator},
+        'top'    : {'flux': rain_scaling*rainfall},
     }
 
     return richards_bcs
@@ -209,7 +201,7 @@ def main():
     moisture_content = soil_curves.moisture_content
     theta = Function(V, name='MoistureContent').interpolate(moisture_content(h))
 
-    solver_parameters = {'ksp_type': 'gmres', 'mat_type': 'aij', 'pc_type': 'python', 'pc_python_type': 'firedrake.AssembledPC', 'assembled_pc_type': 'bjacobi', 'assembled_sub_pc_type': 'ilu', 'ksp_rtol': 1e-05}
+    solver_parameters = {'ksp_type': 'gmres', 'mat_type': 'aij', 'pc_type': 'python', 'pc_python_type': 'firedrake.preconditioners.asm.ASMLinesmoothPC', 'pc_linesmooth_codims': '0', 'sub_pc_type': 'lu', 'sub_ksp_type': 'preonly'}
 
     PETSc.Sys.Print(solver_parameters)  
 
@@ -221,12 +213,13 @@ def main():
                         bcs=richards_bcs,
                         solver_parameters=solver_parameters,
                         time_integrator=time_integrator,
-                        quad_degree=3)
+                        )
 
     # Solver Instantiation
     richards_solver = richardsSolver(h, h_old, time_var, dt, eq)
 
     current_time        = 0.0
+    n_steps             = 0.0
     
     exterior_flux       = 0.0
     initial_mass        = assemble(theta*eq.dx)
@@ -234,9 +227,9 @@ def main():
     nonlinear_iteration = 0.0
     linear_iterations   = 0.0
 
-    nsteps = int(round(t_final / float(dt)))
+    n_steps = int(round(t_final / float(dt)))
 
-    for timestep_number in range(nsteps):
+    while current_time < t_final:
 
         time_var.assign(current_time)
 
@@ -244,6 +237,7 @@ def main():
         h, q, snes = advance_solution(eq, h, h_old, richards_solver)
         current_time += float(dt)
 
+        n_steps += 1
         exterior_flux       += assemble(dt*dot(q, -eq.n)*eq.ds)
         nonlinear_iteration += snes.getIterationNumber()
         linear_iterations   += snes.ksp.getIterationNumber()
@@ -258,6 +252,10 @@ def main():
                         )
 
     final_mass = assemble(theta*eq.dx)
+    PETSc.Sys.Print(f"Number of timesteps: {n_steps}")
+    PETSc.Sys.Print(f"Total number of nonlinear iterations: {nonlinear_iteration}")
+    PETSc.Sys.Print(f"Total number of linear iterations: {linear_iterations}")
+    PETSc.Sys.Print("")
     PETSc.Sys.Print(f"Initial mass: {initial_mass}")
     PETSc.Sys.Print(f"Final mass: {final_mass}")
     PETSc.Sys.Print(f"Exterior flux: {exterior_flux}")
@@ -268,11 +266,6 @@ def main():
         afile.save_function(theta)
         afile.save_function(q)
         afile.save_function(depth)
-
-
-if __name__ == "__main__":
-    main()
-
 
 
 if __name__ == "__main__":

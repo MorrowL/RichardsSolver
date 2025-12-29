@@ -7,9 +7,9 @@ from firedrake.__future__ import interpolate
 import time
 
 """
-Three-dimensional infultration of water into a heterogeneous soil
+Three-dimensional infiltration of water into a heterogeneous soil
 =================================================================
-Here we present an example of the infultration into a heterogeneous column of soil composed of a mixture of sand and loamy sand, as described by
+Here we present an example of the infiltration into a heterogeneous column of soil composed of a mixture of sand and loamy sand, as described by
     Cockett, Heagy, and Haber, Computers and Geosciences, 2018, Efficient 3D inversions using the Richards equation
     https://doi.org/10.1016/j.cageo.2018.04.006
 Simulations are formed in a rectangular prism of side length 2.0 x 2.0 x 2.6 m. No flux is imposed on all the boundaries except the top where $h = -0.1$ m.
@@ -34,10 +34,22 @@ def setup_mesh_and_spaces():
 
     PETSc.Sys.Print("The number of degrees of freedom is:", V.dim())
 
-    asdf
-
     return mesh, V, W
 
+
+def define_soil_curves(mesh):
+
+    """Construct heterogeneuous soil."""
+
+    soil_curves = ExponentialCurve(
+        theta_r=0.15,  # Residual water content [-]
+        theta_s=0.45,  # Saturated water content [-]
+        Ks=1.00e-05,   # Saturated hydraulic conductivity [m/s]
+        alpha=0.25,    # Fitting parameter [1/m]
+        Ss=0.00,       # Specific storage coefficient [1/m]
+    )
+
+    return soil_curves
 
 def define_time_parameters():
 
@@ -61,8 +73,12 @@ def define_soil_curves(mesh):
 
     epsilon = 1/500
     r = [0.0729, 0.0885, 0.7984, 0.9430, 0.6837, 0.1321, 0.7227, 0.1104, 0.1175, 0.6407]
-    I = sin(3*(X-r[0])) + sin(3*(Y-r[1])) + sin(3*(Z-r[2])) + sin(3*(X-r[3])) + sin(3*(Y-r[4])) + sin(3*(Z-r[5]))+sin(3*(X-r[6])) + sin(3*(Y-r[7])) + sin(3*(Z-r[8]))
-    I = 0.5*(1 + tanh(I/epsilon))
+    I = (
+        sin(3 * (X - r[0])) + sin(3 * (Y - r[1])) + sin(3 * (Z - r[2]))
+        + sin(3 * (X - r[3])) + sin(3 * (Y - r[4])) + sin(3 * (Z - r[5]))
+        + sin(3 * (X - r[6])) + sin(3 * (Y - r[7])) + sin(3 * (Z - r[8]))
+    )
+    I = 0.5 * (1 + tanh(I / epsilon))
 
     # Specify the hydrological parameters
     soil_curves = VanGenuchtenCurve(
@@ -89,8 +105,8 @@ def setup_boundary_conditions(mesh, time_var):
         2: {'flux': 0},               # Right
         3: {'flux': 0},               # Front
         4: {'flux': 0},               # Back
-        'bottom': {'h': bottom_bc},   # Top
-        'top': {'h': top_bc},         # Bottom
+        'bottom': {'h': bottom_bc},   # Bottom
+        'top': {'h': top_bc},         # Top
     }
 
     return richards_bcs
@@ -117,7 +133,15 @@ def main():
 
     richards_bcs = setup_boundary_conditions(mesh, time_var)
 
-    solver_parameters = {'ksp_type': 'gmres', 'mat_type': 'aij', 'pc_type': 'python', 'pc_python_type': 'firedrake.AssembledPC', 'assembled_pc_type': 'bjacobi', 'assembled_sub_pc_type': 'ilu', 'ksp_rtol': 1e-05}
+    solver_parameters = {
+        "ksp_type": "gmres",
+        "mat_type": "aij",
+        "pc_type": "python",
+        "pc_python_type": "firedrake.AssembledPC",
+        "assembled_pc_type": "bjacobi",
+        "assembled_sub_pc_type": "ilu",
+        "ksp_rtol": 1e-5, 
+        }
 
     PETSc.Sys.Print(solver_parameters)  
 
@@ -128,21 +152,22 @@ def main():
                         soil_curves=soil_curves,
                         bcs=richards_bcs,
                         solver_parameters=solver_parameters,
-                        time_integrator=time_integrator,
-                        quad_degree=1)
+                        time_integrator=time_integrator)
 
     # Solver Instantiation
     richards_solver = richardsSolver(h, h_old, time_var, dt, eq)
 
-    current_time = 0.0
-    exterior_flux = 0
-    timestep_number = 0
-    nonlinear_iteration = 0
-    linear_iterations = 0
-    initial_mass = assemble(theta*eq.dx)
-    start_time = time.perf_counter()
+    current_time        = 0.0
+    
+    exterior_flux       = 0.0
+    initial_mass        = assemble(theta*eq.dx)
 
-    while current_time < t_final:
+    nonlinear_iteration = 0.0
+    linear_iterations   = 0.0
+
+    nsteps = int(round(t_final / float(dt)))
+
+    for timestep_number in range(nsteps):
 
         time_var.assign(current_time)
 
@@ -150,11 +175,9 @@ def main():
         h, q, snes = advance_solution(eq, h, h_old, richards_solver)
         current_time += float(dt)
 
-        timestep_number += 1
-        exterior_flux += assemble(dt*dot(q, -eq.n)*eq.ds)
+        exterior_flux       += assemble(dt*dot(q, -eq.n)*eq.ds)
         nonlinear_iteration += snes.getIterationNumber()
-        linear_iterations += snes.ksp.getIterationNumber()
-        theta.interpolate(moisture_content(h))
+        linear_iterations   += snes.ksp.getIterationNumber()
 
         PETSc.Sys.Print(f"Current time [h]: {current_time/3600}")   
         PETSc.Sys.Print(f"Nonlinear iterations: {snes.getIterationNumber()}")
@@ -165,10 +188,8 @@ def main():
         
         #output.write(h, theta, q, time=time)
 
-    end_time = time.perf_counter()
     final_mass = assemble(theta*eq.dx)
 
-    PETSc.Sys.Print(f"Execution time: {end_time-start_time} seconds")
     PETSc.Sys.Print("")
     PETSc.Sys.Print(f"Number of timesteps: {timestep_number}")
     PETSc.Sys.Print(f"Total number of nonlinear iterations: {nonlinear_iteration}")

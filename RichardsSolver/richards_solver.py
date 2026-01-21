@@ -19,14 +19,19 @@ The solver constructs the weak residual F(h, v) = 0 for a given test function v.
 """
 
 
-def richardsSolver(h: fd.Function, h_old: fd.Function, time: fd.Constant, time_step: fd.Constant, eq):
-
+def richardsSolver(h: fd.Function, 
+                   h_old: fd.Function, 
+                   time: fd.Constant, 
+                   time_step: fd.Constant, 
+                   eq):
+    
     relative_conductivity = eq.soil_curves.relative_conductivity
 
     # Choose the time integration method
     match eq.time_integrator:
         case "Picard":
             hDiff = h
+            K = relative_conductivity(h_star)
         case "SemiImplicit":
             hDiff = h
             K = relative_conductivity(h_old)
@@ -46,7 +51,8 @@ def richardsSolver(h: fd.Function, h_old: fd.Function, time: fd.Constant, time_s
     # --- Residual ---
     F = mass_term(h, h_old, time_step, eq) \
         + gravity_advection(K, eq) \
-        + diffusion_term(hDiff, K, K_old, eq)
+        + diffusion_term(hDiff, K, K_old, eq) \
+        + source_term(eq)
 
     problem = fd.NonlinearVariationalProblem(F, h)
 
@@ -63,14 +69,21 @@ def richardsSolver(h: fd.Function, h_old: fd.Function, time: fd.Constant, time_s
 
 def mass_term(h: fd.Function, h_old: fd.Function, time_step: fd.Constant, eq):
 
-    theta_new = eq.soil_curves.moisture_content(h)
     theta_old = eq.soil_curves.moisture_content(h_old)
 
-    if eq.time_integrator == "SemiImplicit":
-        C = eq.soil_curves.water_retention(h_old)
+    if eq.time_integrator in ["SemiImplicit", 'Picard']:
+        C = eq.soil_curves.water_retention(h_old) 
         F = fd.inner(C*(h - h_old)/time_step, eq.test_function) * eq.dx
     else:
+        theta_new = eq.soil_curves.moisture_content(h)
         F = fd.inner((theta_new - theta_old)/time_step, eq.test_function) * eq.dx
+
+    return F
+
+
+def source_term(eq):
+
+    F = -fd.inner(eq.source_term, eq.test_function) * eq.dx
 
     return F
 
@@ -88,12 +101,12 @@ def diffusion_term(hDiff: fd.Function, K: fd.Function, K_old: fd.Function, eq):
     sigma = interior_penalty_factor(eq, shift=0)
     sigma_int = sigma * fd.avg(fd.FacetArea(eq.mesh) / fd.CellVolume(eq.mesh))
 
-    jump_v = fd.jump(v, eq.n) 
-    jump_h = fd.jump(hDiff, eq.n) 
+    jump_v = fd.jump(v, eq.n)
+    jump_h = fd.jump(hDiff, eq.n)
     avg_K  = fd.avg(K_old)
 
-    F += sigma_int * fd.inner(jump_v, avg_K * jump_h) * eq.dS 
-    F -= fd.inner(fd.avg(K_old * grad_v), jump_h) * eq.dS 
+    F += sigma_int * fd.inner(jump_v, avg_K * jump_h) * eq.dS
+    F -= fd.inner(fd.avg(K_old * grad_v), jump_h) * eq.dS
     F -= fd.inner(jump_v, fd.avg(K_old * fd.grad(hDiff))) * eq.dS
 
     # Impose bcs within the weak formulation
@@ -116,19 +129,17 @@ def diffusion_term(hDiff: fd.Function, K: fd.Function, K_old: fd.Function, eq):
     return F
 
 
-def gravity_advection(K, eq): 
+def gravity_advection(K, eq):
 
-    v = eq.test_function 
-    x = fd.SpatialCoordinate(eq.mesh) 
+    x = fd.SpatialCoordinate(eq.mesh)
 
     # Vertical unit vector
-    z = x[eq.dim - 1]
-    vertical = fd.grad(z)
+    vertical = fd.grad(x[eq.dim - 1])
 
-    q = K * vertical 
+    q = K * vertical
     qn = 0.5 * (fd.dot(q, eq.n) + abs(fd.dot(q, eq.n))) 
 
-    F = fd.inner(q, fd.grad(v)) * eq.dx   # Main volume integral
-    F -= fd.jump(v) * (qn("+") - qn("-")) * eq.dS  # Upwinding
+    F = fd.inner(q, fd.grad(eq.test_function)) * eq.dx   # Main volume integral
+    F -= fd.jump(eq.test_function) * (qn("+") - qn("-")) * eq.dS  # Upwinding
 
     return F

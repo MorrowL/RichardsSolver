@@ -23,8 +23,8 @@ def setup_mesh_and_spaces():
     horiz_elt = FiniteElement("DG", triangle, 1)
     vert_elt  = FiniteElement("DG", interval, 1)
 
-    horizontal_resolution = 3500
-    number_layers         = 600
+    horizontal_resolution = 3000
+    number_layers         = 300
     layer_height          = 1/number_layers
 
     # --- Build extruded mesh ---
@@ -36,7 +36,7 @@ def setup_mesh_and_spaces():
         number_layers,
         layer_height=layer_height,
         extrusion_type='uniform',
-        name='mesh'
+        name='mesh',
         )
 
     W = VectorFunctionSpace(mesh, 'CG', 1)
@@ -59,6 +59,7 @@ def setup_mesh_and_spaces():
     PETSc.Sys.Print("The number of degrees of freedom is:", V.dim())
     PETSc.Sys.Print("Horizontal resolution:", horizontal_resolution)
     PETSc.Sys.Print("Number of layers:", number_layers)
+    PETSc.Sys.Print(horiz_elt, vert_elt)
 
     # --- Load spatial fields (elevation, layers, rainfall, etc.) ---
     Vcg = FunctionSpace(mesh, 'CG', 1)
@@ -83,8 +84,6 @@ def setup_mesh_and_spaces():
         'watertable'  : watertable
     }
 
-    asdasasd
-
     return mesh, V, W, spatial_data
 
 
@@ -92,13 +91,15 @@ def define_time_parameters():
 
     """Sets simulation time and time-stepping constants."""
 
-    t_final_years = 0.25
+    t_final_years = 200
     t_final = t_final_years * 3.156e+7  # in seconds
 
-    dt_days = 2.0
+    dt_days = 1
     dt = Constant(dt_days * 86400)  # in seconds
 
     time_integrator = "BackwardEuler"
+
+    PETSc.Sys.Print(time_integrator)
 
     return t_final, dt, time_integrator
 
@@ -124,7 +125,10 @@ def define_soil_curves(mesh, V, spatial_data):
     # We employ a depth (in metres) dependent porosity and water saturation based on emperical formula
     S_depth = 1/((1 + 0.000071*depth)**5.989)     # Depth dependent porosity
     K_depth = (1 - depth / (58 + 1.02*depth))**3  # Depth dependent conductivity
-    Ks = Function(V, name='SaturatedConductivity').interpolate(K_depth*(2.5e-05*I1 + 1e-03*(1 - I1)*I2 + 5e-04*(1-I2)))
+    Ks_layer1 = 2.5e-05 
+    Ks_layer2 = 1e-03 
+    Ks_layer3 = 5e-04
+    Ks = Function(V, name='SaturatedConductivity').interpolate(K_depth*(Ks_layer1*I1 + Ks_layer2*(1 - I1)*I2 + Ks_layer3*(1-I2)))
 
     # Specify the hydrological parameters
     soil_curve = HaverkampCurve(
@@ -158,26 +162,42 @@ def setup_boundary_conditions(mesh, time_var, spatial_data):
 
     rain_scaling = 0.14 * 3.171e-11  # Percentage of rainfall that enters ground
 
-    # Extraction/sink points
-    spread = 5e07  # defines the radius of influence for each pumping well.
-    extraction_indicator = 0*x[0]
-
-    # Coordinates of extraction sites
-    xPts = np.array([ 1.7e05, 2.2e05, 2.4e05, 2.0e05, 1.6e05, 1.7e05, 2.2e05, 2.5e05, 2.0e05, 1.5e05, 2.3e05, 1.0e05, 2.0e05, 1.9e05, 1.9e05, 1.9e05, 1.6e05, 2.6e05, 1.2e05, 2.5e05 ])
-    yPts = np.array([ 8.0e04, 4.3e04, 4.2e04, 7.3e04, 3.5e04, 9.3e04, 6.0e04, 6.5e04, 6.0e04, 5.0e04, 9.0e04, 6.5e04, 2.0e04, 1.0e05, 8.5e04, 4.4e04, 6.0e04, 5.5e04, 6.5e04, 2.2e04 ])
-
-    for x0, y0 in zip(xPts, yPts):
-        r2 = (x[0] - x0)**2 + (x[1] - y0)**2 
-        extraction_indicator -= exp(-r2 / spread)
-
     richards_bcs = {
         1        : {'h' : depth - watertable},               # Side boudaries
-        'bottom' : {'flux': 3e-9*extraction_indicator},
+        'bottom' : {'flux': 0},
         'top'    : {'flux': rain_scaling*rainfall},
     }
 
     return richards_bcs
 
+
+def source_term(mesh, spatial_data):
+
+    """
+    Models the extraction of water from wells/bore holes
+    """
+
+    x = SpatialCoordinate(mesh)
+
+    depth = spatial_data['depth']
+
+    # Extraction/sink points
+    spread_h, spread_v = 5e07, 10  # defines the radius of influence for each pumping well.
+    extraction_indicator = 0*x[0]
+
+    # Coordinates of extraction sites
+    xPts = np.array([ 1.7e05, 2.2e05, 2.4e05, 2.0e05, 1.6e05, 1.7e05, 2.2e05, 2.5e05, 2.0e05, 1.5e05, 2.3e05, 1.0e05, 2.0e05, 1.9e05, 1.9e05, 1.9e05, 1.6e05, 2.6e05, 1.2e05, 2.5e05 ])
+    yPts = np.array([ 8.0e04, 4.3e04, 4.2e04, 7.3e04, 3.5e04, 9.3e04, 6.0e04, 6.5e04, 6.0e04, 5.0e04, 9.0e04, 6.5e04, 2.0e04, 1.0e05, 8.5e04, 4.4e04, 6.0e04, 5.5e04, 6.5e04, 2.2e04 ])
+    well_depth = 30
+
+    for x0, y0 in zip(xPts, yPts):
+        rh = (x[0] - x0)**2 + (x[1] - y0)**2
+        rv = (x[2] - well_depth)**2
+        extraction_indicator -= exp(-rh / spread_h - rv / spread_v)
+
+    extraction = 5e-10 * extraction_indicator
+
+    return extraction
 
 def main():
 
@@ -187,21 +207,24 @@ def main():
     t_final, dt, time_integrator = define_time_parameters()
     soil_curves = define_soil_curves(mesh, V, spatial_data)
     richards_bcs = setup_boundary_conditions(mesh, time_var, spatial_data)
+    extraction = source_term(mesh, spatial_data)
 
     # Define initial condition
     depth      = spatial_data['depth']
     watertable = spatial_data['watertable']
 
-    initial_head = Function(V, name="InitialCondition").interpolate(depth - watertable)
-
-    h     = Function(V, name="PressureHead").assign(initial_head)
-    h_old = Function(V, name="OldSolution").assign(h)
-    q     = Function(W, name='VolumetricFlux')
-
-    moisture_content = soil_curves.moisture_content
-    theta = Function(V, name='MoistureContent').interpolate(moisture_content(h))
-
-    solver_parameters = {'ksp_type': 'gmres', 'mat_type': 'aij', 'pc_type': 'python', 'pc_python_type': 'firedrake.preconditioners.asm.ASMLinesmoothPC', 'pc_linesmooth_codims': '0', 'sub_pc_type': 'lu', 'sub_ksp_type': 'preonly'}
+    solver_parameters = {
+        "ksp_type": "gmres",
+        "pc_type": "mg",                # Multigrid for global scalability
+        "mg_levels_ksp_type": "chebyshev",
+        "mg_levels_pc_type": "python",
+        "mg_levels_pc_python_type": "firedrake.ASMLinesmoothPC", # Local anisotropy
+        "mg_levels_pc_linesmooth_codims": "0,1",
+        "mg_levels_pc_linesmooth_pc_type": "lu", # Direct solve on the 'stiff' columns
+        "mg_coarse_pc_type": "python",
+        "mg_coarse_pc_python_type": "firedrake.AssembledPC",
+        "mg_coarse_assembled_pc_type": "lu",
+    }
 
     PETSc.Sys.Print(solver_parameters)  
 
@@ -211,61 +234,102 @@ def main():
                         mesh=mesh,
                         soil_curves=soil_curves,
                         bcs=richards_bcs,
-                        solver_parameters=solver_parameters,
+                        solver_parameters='iterative',
+                        source_term=extraction,
                         time_integrator=time_integrator,
                         )
+    
+    initial_head = Function(V, name="InitialCondition").interpolate(depth - watertable)
+
+    h     = Function(V, name="PressureHead").assign(initial_head)
+    h_old = Function(V, name="OldSolution").assign(h)
+    q     = Function(W, name='VolumetricFlux')
+    h_star = Function(V, name='ApproximateSolution').assign(h)
+
+    moisture_content = soil_curves.moisture_content
+    theta = Function(V, name='MoistureContent').interpolate(moisture_content(h))
 
     # Solver Instantiation
-    richards_solver = richardsSolver(h, h_old, time_var, dt, eq)
+    richards_linear = richardsSolver(h, h_old, time_var, dt, eq)
 
     current_time        = 0.0
     n_steps             = 0.0
     
     exterior_flux       = 0.0
+    total_extracted     = 0.0
     initial_mass        = assemble(theta*eq.dx)
 
-    nonlinear_iteration = 0.0
-    linear_iterations   = 0.0
+    total_nl_it = 0.0
+    total_l_it  = 0.0
 
-    n_steps = int(round(t_final / float(dt)))
+    n_steps = 0
+    t_next = 0
+    t_interval = 3.154e+7
+
+    outfile = VTKFile("CG11_dx=5000_layers=300.pvd")
 
     while current_time < t_final:
 
         time_var.assign(current_time)
 
+        # Solve model with retries
         h_old.assign(h)
-        h, q, snes = advance_solution(eq, h, h_old, richards_solver)
+        MAX_RETRIES = 3
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                h, q, nl_it, l_it = advance_solution(eq, h, h_old, richards_linear)
+                break # if successful
+            except:
+                PETSc.Sys.Print(f"Failed to converge on attempt {attempt+1}, decreasing time step")
+                dt.assign(0.5*dt)
+                if attempt == MAX_RETRIES:
+                    PETSc.Sys.Print("Failing to converge")
+                    raise
+                else:
+                    continue
+
+        if nl_it < 3:
+            dt.assign(1.05*dt)
+        elif nl_it > 6:
+            dt.assign(0.9*dt)
+
+
         current_time += float(dt)
 
-        n_steps += 1
-        exterior_flux       += assemble(dt*dot(q, -eq.n)*eq.ds)
-        nonlinear_iteration += snes.getIterationNumber()
-        linear_iterations   += snes.ksp.getIterationNumber()
+        # Diagnostics and mass balance
+        n_steps                 += 1
+        exterior_flux           += assemble(dt*dot(q, -eq.n)*eq.ds)
+        total_nl_it             += nl_it
+        total_l_it += l_it
+        total_extracted         += float(dt)*assemble(extraction*dx)
 
         theta.interpolate(moisture_content(h))
+        water_content = assemble(theta*eq.dx)
 
-        PETSc.Sys.Print( f"t = {current_time/3600:.2f} h | "
-                        f"NL iters = {snes.getIterationNumber()} | "
-                        f"L iters = {snes.ksp.getIterationNumber()} | "
-                        f"Water content = {assemble(theta*eq.dx)} | "
-                        f"Exterior flux = {exterior_flux}"
+        PETSc.Sys.Print( f"t = {current_time/(24*3600):.2f} d | "
+                        f"dt = {float(dt)/(24*3600):.2f} d | "
+                        f"NL iters = {nl_it} | "
+                        f"L iters = {l_it} | "
+                        f"Water content = {water_content:.5e} | "
+                        f"Exterior flux = {exterior_flux:.5e} | "
+                        f'Water Balabnce =  {(water_content-initial_mass)/(total_extracted+exterior_flux):.4f}'
                         )
+        
+        if current_time >= t_next:
+            outfile.write(h, theta, q, depth, time=current_time/3.154e+7)
+            t_next = t_next + t_interval
 
     final_mass = assemble(theta*eq.dx)
     PETSc.Sys.Print(f"Number of timesteps: {n_steps}")
-    PETSc.Sys.Print(f"Total number of nonlinear iterations: {nonlinear_iteration}")
-    PETSc.Sys.Print(f"Total number of linear iterations: {linear_iterations}")
+    PETSc.Sys.Print(f"Total number of nonlinear iterations: {total_nl_it}")
+    PETSc.Sys.Print(f"Total number of linear iterations: {total_l_it}")
     PETSc.Sys.Print("")
     PETSc.Sys.Print(f"Initial mass: {initial_mass}")
     PETSc.Sys.Print(f"Final mass: {final_mass}")
     PETSc.Sys.Print(f"Exterior flux: {exterior_flux}")
+    PETSc.Sys.Print(f"Total extracted: {total_extracted}")
 
-    with CheckpointFile("DG11_dx=3000_layers=300.h5", 'w') as afile:
-        afile.save_mesh(mesh)
-        afile.save_function(h)
-        afile.save_function(theta)
-        afile.save_function(q)
-        afile.save_function(depth)
+
 
 
 if __name__ == "__main__":

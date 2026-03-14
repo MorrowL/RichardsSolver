@@ -24,35 +24,26 @@ def richardsSolver(h: fd.Function,
                    time: fd.Constant, 
                    time_step: fd.Constant, 
                    eq):
-    
-    relative_conductivity = eq.soil_curves.relative_conductivity
 
-    # Choose the time integration method
+    # Residual for each time integration method
     match eq.time_integrator:
-        case "Picard":
-            hDiff = h
-            K = relative_conductivity(h_star)
-        case "SemiImplicit":
-            hDiff = h
-            K = relative_conductivity(h_old)
         case "ImplicitMidpoint":
-            hDiff = (h + h_old)/2
-            K = relative_conductivity(hDiff)
+            F = mass_term(h, h_old, time_step, eq) \
+                + gravity_advection(0.5*(h+h_old), eq) \
+                + diffusion_term(0.5*(h+h_old), eq) \
+                + source_term(eq)
         case 'BackwardEuler':
-            hDiff = h
-            K = relative_conductivity(h)
+            F = mass_term(h, h_old, time_step, eq) \
+                + gravity_advection(h, eq) \
+                + diffusion_term(h, eq) \
+                + source_term(eq)
         case 'CrankNicolson':
-            hDiff = (h + h_old)/2
-            K = (relative_conductivity(h)+relative_conductivity(h_old))/2
+            F = mass_term(h, h_old, time_step, eq) \
+                + 0.5*gravity_advection(h, eq)+0.5*gravity_advection(h_old, eq) \
+                + 0.5*diffusion_term(h, eq)+0.5*diffusion_term(h_old, eq) \
+                + source_term(eq)
         case _:
             raise ValueError(f"Unknown time integrator '{eq.time_integrator}'")
-    K_old = relative_conductivity(h_old)
-
-    # --- Residual ---
-    F = mass_term(h, h_old, time_step, eq) \
-        + gravity_advection(K, eq) \
-        + diffusion_term(hDiff, K, K_old, eq) \
-        + source_term(eq)
 
     problem = fd.NonlinearVariationalProblem(F, h)
 
@@ -88,26 +79,29 @@ def source_term(eq):
     return F
 
 
-def diffusion_term(hDiff: fd.Function, K: fd.Function, K_old: fd.Function, eq):
+def diffusion_term(h: fd.Function, eq):
 
     v = eq.test_function
     grad_v = fd.grad(v)
     bcs = eq.bcs
 
+    relative_conductivity = eq.soil_curves.relative_conductivity
+    K = relative_conductivity(h)
+
     # Volume integral
-    F = fd.inner(grad_v, K * fd.grad(hDiff)) * eq.dx
+    F = fd.inner(grad_v, K * fd.grad(h)) * eq.dx
 
     # SIPG
     sigma = interior_penalty_factor(eq, shift=0)
     sigma_int = sigma * fd.avg(fd.FacetArea(eq.mesh) / fd.CellVolume(eq.mesh))
 
     jump_v = fd.jump(v, eq.n)
-    jump_h = fd.jump(hDiff, eq.n)
-    avg_K  = fd.avg(K_old)
+    jump_h = fd.jump(h, eq.n)
+    avg_K  = fd.avg(K)
 
     F += sigma_int * fd.inner(jump_v, avg_K * jump_h) * eq.dS
-    F -= fd.inner(fd.avg(K_old * grad_v), jump_h) * eq.dS
-    F -= fd.inner(jump_v, fd.avg(K_old * fd.grad(hDiff))) * eq.dS
+    F -= fd.inner(fd.avg(K * grad_v), jump_h) * eq.dS
+    F -= fd.inner(jump_v, fd.avg(K * fd.grad(h))) * eq.dS
 
     # Impose bcs within the weak formulation
     for bc_idx, bc_info in bcs.items():
@@ -116,11 +110,11 @@ def diffusion_term(hDiff: fd.Function, K: fd.Function, K_old: fd.Function, eq):
         boundaryValue = boundaryInfo[boundaryType]
         if boundaryType == 'h':
             sigma_ext = sigma * fd.FacetArea(eq.mesh) / fd.CellVolume(eq.mesh)
-            diff = hDiff - boundaryValue
+            diff = h - boundaryValue
 
             F += 2 * sigma_ext * v * K * diff * eq.ds(bc_idx)
             F -= fd.inner(K * grad_v, eq.n) * diff * eq.ds(bc_idx)
-            F -= fd.inner(v * eq.n, K * fd.grad(hDiff)) * eq.ds(bc_idx)
+            F -= fd.inner(v * eq.n, K * fd.grad(h)) * eq.ds(bc_idx)
         elif boundaryType == 'flux':
             F -= boundaryValue * eq.test_function * eq.ds(bc_idx)
         else:
@@ -129,7 +123,10 @@ def diffusion_term(hDiff: fd.Function, K: fd.Function, K_old: fd.Function, eq):
     return F
 
 
-def gravity_advection(K, eq):
+def gravity_advection(h: fd.Function, eq):
+
+    relative_conductivity = eq.soil_curves.relative_conductivity
+    K = relative_conductivity(h)
 
     x = fd.SpatialCoordinate(eq.mesh)
 
@@ -137,7 +134,7 @@ def gravity_advection(K, eq):
     vertical = fd.grad(x[eq.dim - 1])
 
     q = K * vertical
-    qn = 0.5 * (fd.dot(q, eq.n) + abs(fd.dot(q, eq.n))) 
+    qn = 0.5 * (fd.dot(q, eq.n) + abs(fd.dot(q, eq.n)))
 
     F = fd.inner(q, fd.grad(eq.test_function)) * eq.dx   # Main volume integral
     F -= fd.jump(eq.test_function) * (qn("+") - qn("-")) * eq.dS  # Upwinding

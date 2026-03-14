@@ -6,7 +6,7 @@ Convergence study of Tracy's two dimensional exact solution (steady-state and tr
 """
 
 
-def test_tracy():
+def test_tracy_2d():
 
     PETSc.Sys.Print("="*60)
     PETSc.Sys.Print("Performing transient solution check with Backward Euler")

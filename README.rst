@@ -12,21 +12,33 @@ RichardsSolver is a Firedrake based package (https://www.firedrakeproject.org/) 
 
 where theta is the moisture content, h is the pressure head, and K is the relative conductivity.
 
+
+Requirements
+============
+
+- Python ≥ 3.10
+- A working **Firedrake** installation (with PETSc) — follow the official instructions: https://www.firedrakeproject.org/install.html
+
+
 Installation
 ============
 
-This package first requires a working installation of Firedrake, with instructions found at https://www.firedrakeproject.org/install.html. RichardsSolver can be installed from Github via:
+
+Install into your *active Firedrake environment*:
 
 .. code-block:: bash
 
-    pip install git+https://github.com/MorrowL/RichardsSolver.git
+   # clone and install in editable mode
+   git clone https://github.com/MorrowL/RichardsSolver.git
+   cd RichardsSolver
+   pip install -e .
 
-or to clone the whole package (inc. demos)
+You can also install directly from GitHub without cloning:
 
 .. code-block:: bash
 
-    git clone https://github.com/MorrowL/RichardsSolver.git
-    pip install -e RichardsSolver
+   pip install "git+https://github.com/MorrowL/RichardsSolver.git"
+
 
 Usage
 =====
@@ -82,32 +94,24 @@ time_integrator is a string that specifies how Richards' equation is integrated 
 
 quad_degree specifies quadrature degree, where 2p + 1 is recommended with p being the polynomial degree of V.
 
-Available demos
-===================
 
-Tracy's exact solution
------------------------
-A comparison with Tracy's exact solution in two- and three-dimensions with exponential soil properties. Provides comparison to steady-state and transient solutions.
+Demos (ready to run)
+--------------------
 
-Reference: Tracy, F. T. (2006). Clean two- and three-dimensional analytical
-solutions of Richards' equation for testing numerical solvers. Water Resources
-Research, 42(8). https://doi.org/10.1029/2005WR004638
+Each demo is self‑contained and can be launched from the repository root:
 
-Water table recharge
----------------------
-Reproduces Vauclin's 2D test case, which involves the rechange of a water table performed with the Haverkamp soil model.
+.. code-block:: bash
 
-Reference: Vauclin, M., Khanji, D., & Vachaud, G. (1979). Experimental and
-numerical study of a transient, two-dimensional unsaturated-saturated water
-table recharge problem. Water Resources Research, 15(5), 1089-1101. https://doi.org/10.1029/WR015i005p01089
+   # Tracy analytical (2-D / 3-D; exponential soil)
+   python demos/tracy2d.py
+   python demos/tracy3d.py
 
-3D water infultration into heterogeneuous soil
-----------------------------------------------
-Reference solution for 3D heterogeneous benchmark with Van Genuchten soil model. Provides spatially varying material properties and standard problem setup.
+   # Vauclin water-table recharge (2-D; Haverkamp)
+   python demos/vauclin2d.py
 
-Reference: Cockett, R., Heagy, L. J., & Haber, E. (2018). Efficient 3D
-inversions using the Richards equation. Computers & Geosciences, 116, 91-102.
-https://doi.org/10.1016/j.cageo.2018.04.006
+   # 3-D infiltration into heterogeneous soil (van Genuchten, spatially varying)
+   python demos/hetero3d_vg.py
+
 
 Documentation
 =============

@@ -1,0 +1,51 @@
+[project]
+name = "RichardsSolver"
+version = "0.1.0"
+description = "A Firedrake-based solver for Richards' equation in 2D/3D"
+readme = "README.rst"
+requires-python = ">=3.10"
+license = { file = "LICENSE.txt" }
+authors = [
+  { name = "Liam Morrow" }
+]
+
+# NOTE: Firedrake is an external stack and should be installed separately.
+# Keep runtime deps minimal; add only what your package imports directly.
+dependencies = [
+  "numpy>=1.24",
+]
+
+# Trove classifiers help users/findability on PyPI (optional now, useful later).
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering",
+  "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: POSIX :: Linux"
+]
+
+[project.urls]
+Homepage = "https://github.com/MorrowL/RichardsSolver"
+Issues   = "https://github.com/MorrowL/RichardsSolver/issues"
+
+[project.optional-dependencies]
+# Optional extra for running the test suite locally.
+tests = [
+  "pytest>=7.0",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# ------------------------------
+# Setuptools configuration
+# ------------------------------
+[tool.setuptools]
+# Demos/tests live at repo top-level and are not installed as packages.
+packages = ["RichardsSolver"]

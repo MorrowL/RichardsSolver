@@ -50,15 +50,13 @@ RichardsSolver is based on Firedrake, and as such, we recommend users to familia
 .. code-block:: python
 
     eq = RichardsSolver(V=V,
-                        W=W,
-                        mesh=mesh,
                         soil_curves=soil_curves,
                         bcs=richards_bcs,
                         solver_parameters=solver_parameters,
                         time_integrator=time_integrator,
                         quad_degree=3)
 
-where V is the function of pressure head, W is the vector function space for the volumetric flux (does not influence solution). For the soil curves, users have a choice of several hydrological models (HaverkampCurve, ExponentialCurve, and VanGenutchenCurve). An example of how the soil_curves dictionary is made:
+where V is the function of pressure head. For the soil curves, users have a choice of several hydrological models (HaverkampCurve, ExponentialCurve, and VanGenutchenCurve). An example of how the soil_curves dictionary is made:
 
 .. code-block:: python
 
@@ -88,9 +86,9 @@ richards_bcs is dictionary that contains information about boundary conditions. 
 
 The numbers 1, 2, 3 and 4 correspond to the boundary IDs of the mesh. Note the boundary conditions can be spatially and/or temporally dependent.
 
-solver_parameters are the parameters to solve the system of equations. Users can choose 'default' (recommended), 'exact', 'iterative', or provide a dictionary of solver options.
+solver_parameters are the parameters to solve the system of equations. Users can choose 'default', 'direct', 'iterative', or provide a dictionary of solver options. For 2D problems 'default' uses 'direct', while for 3D it uses 'iterativer'.
 
-time_integrator is a string that specifies how Richards' equation is integrated in time. Current options are 'BackwardEuler', 'CrankNicolson', or 'SemiImplicit'.
+time_integrator is a string that specifies how Richards' equation is integrated in time. Current options are 'BackwardEuler', 'CrankNicolson', or 'ImplicitMidpoint'.
 
 quad_degree specifies quadrature degree, where 2p + 1 is recommended with p being the polynomial degree of V.
 

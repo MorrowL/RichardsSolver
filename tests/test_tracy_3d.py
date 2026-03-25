@@ -1,4 +1,4 @@
-from gadopt import *
+from RichardsSolver import *
 
 """
 Convergence study of Tracy's three dimensional exact solution (steady-state and transient)

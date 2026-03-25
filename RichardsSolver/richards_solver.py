@@ -9,45 +9,45 @@ Richards equation solver in mixed form:
     ∂θ/∂t = ∇·(K(h) ∇(h + z))
 
 where:
-    h  = pressure head
-    S  = effective saturation
-    C  = specific moisture capacity
-    K  = hydraulic conductivity
-    z  = vertical coordinate
+    h  = pressure head [L]
+    S  = effective saturation [-]
+    K  = hydraulic conductivity [L/T]
+    z  = vertical coordinate [L]
 
 The solver constructs the weak residual F(h, v) = 0 for a given test function v.
 """
 
 
-def richardsSolver(h: fd.Function, 
+def RichardsSolver(h: fd.Function,  
                    h_old: fd.Function, 
                    time: fd.Constant, 
                    time_step: fd.Constant, 
                    eq):
 
-    # Residual for each time integration method
+    # Determine the evaluation state for spatial terms
     match eq.time_integrator:
-        case "ImplicitMidpoint":
-            F = mass_term(h, h_old, time_step, eq) \
-                + gravity_advection(0.5*(h+h_old), eq) \
-                + diffusion_term(0.5*(h+h_old), eq) \
-                + source_term(eq)
         case 'BackwardEuler':
-            F = mass_term(h, h_old, time_step, eq) \
-                + gravity_advection(h, eq) \
-                + diffusion_term(h, eq) \
-                + source_term(eq)
+            h_eval = h
+        case 'ImplicitMidpoint':
+            h_eval = 0.5 * (h + h_old)
         case 'CrankNicolson':
-            F = mass_term(h, h_old, time_step, eq) \
-                + 0.5*gravity_advection(h, eq)+0.5*gravity_advection(h_old, eq) \
-                + 0.5*diffusion_term(h, eq)+0.5*diffusion_term(h_old, eq) \
-                + source_term(eq)
+            h_eval = None # ImplicitMidpoint is generally better than CN
         case _:
             raise ValueError(f"Unknown time integrator '{eq.time_integrator}'")
 
+    # Mass and Source are usually consistent across methods
+    F = richards_mass_term(h, h_old, time_step, eq) + richards_source_term(eq)
+
+    # Add spatial terms
+    if h_eval is not None:
+        F += richards_gravity_advection(h_eval, eq) + richards_diffusion_term(h_eval, eq)
+    else:
+        # True Crank-Nicolson (Average of fluxes)
+        F += 0.5 * (richards_gravity_advection(h, eq) + richards_gravity_advection(h_old, eq))
+        F += 0.5 * (richards_diffusion_term(h, eq) + richards_diffusion_term(h_old, eq))
+
     problem = fd.NonlinearVariationalProblem(F, h)
 
-    # Jacobian not needed for SemiImplicit
     solver_parameters = eq.solver_parameters
 
     solverRichardsNonlinear = fd.NonlinearVariationalSolver(
@@ -58,28 +58,36 @@ def richardsSolver(h: fd.Function,
     return solverRichardsNonlinear
 
 
-def mass_term(h: fd.Function, h_old: fd.Function, time_step: fd.Constant, eq):
+def richards_mass_term(h: fd.Function, h_old: fd.Function, time_step: fd.Constant, eq):
 
-    theta_old = eq.soil_curves.moisture_content(h_old)
+    theta = eq.soil_curves.moisture_content
+    F_mixed = fd.inner((theta(h) - theta(h_old))/time_step, eq.test_function) * eq.dx
 
-    if eq.time_integrator in ["SemiImplicit", 'Picard']:
-        C = eq.soil_curves.water_retention(h_old) 
-        F = fd.inner(C*(h - h_old)/time_step, eq.test_function) * eq.dx
-    else:
-        theta_new = eq.soil_curves.moisture_content(h)
-        F = fd.inner((theta_new - theta_old)/time_step, eq.test_function) * eq.dx
+    """
+    # Use this if wanting to solve in pressure-head form
+    water_retention = eq.soil_curves.water_retention
+    match eq.time_integrator:
+        case "ImplicitMidpoint":
+            C = water_retention(0.5*(h+h_old)) 
+        case 'BackwardEuler':
+            C = water_retention(h)
+        case 'CrankNicolson':
+            C = 0.5*(water_retention(h)+water_retention(h_old))
 
-    return F
+    F_head = fd.inner(C*(h - h_old)/time_step, eq.test_function) * eq.dx
+    """
+
+    return F_mixed
 
 
-def source_term(eq):
+def richards_source_term(eq):
 
     F = -fd.inner(eq.source_term, eq.test_function) * eq.dx
 
     return F
 
 
-def diffusion_term(h: fd.Function, eq):
+def richards_diffusion_term(h: fd.Function, eq):
 
     v = eq.test_function
     grad_v = fd.grad(v)
@@ -123,20 +131,20 @@ def diffusion_term(h: fd.Function, eq):
     return F
 
 
-def gravity_advection(h: fd.Function, eq):
+def richards_gravity_advection(h: fd.Function, eq):
 
-    relative_conductivity = eq.soil_curves.relative_conductivity
-    K = relative_conductivity(h)
-
+    v = eq.test_function
     x = fd.SpatialCoordinate(eq.mesh)
 
-    # Vertical unit vector
-    vertical = fd.grad(x[eq.dim - 1])
+    K = eq.soil_curves.relative_conductivity(h)
+    e_z = fd.grad(x[eq.dim - 1])
+    q = K * e_z
 
-    q = K * vertical
-    qn = 0.5 * (fd.dot(q, eq.n) + abs(fd.dot(q, eq.n)))
+    # Conservative split: - ∫Ω q · ∇v
+    F = -fd.inner(q, fd.grad(v)) * eq.dx
 
-    F = fd.inner(q, fd.grad(eq.test_function)) * eq.dx   # Main volume integral
-    F -= fd.jump(eq.test_function) * (qn("+") - qn("-")) * eq.dS  # Upwinding
+    # Interior upwind flux:  ∫F (q̂·n) [v]
+    qn = 0.5 * (fd.dot(q, eq.n) + abs(fd.dot(q, eq.n)))  # one-sided “+”
+    F += fd.jump(v) * (qn('+') - qn('-')) * eq.dS
 
-    return F
+    return -F

@@ -5,26 +5,6 @@ from firedrake.petsc import PETSc
 from scipy.interpolate import griddata
 import ufl
 
-def data_2_function(mesh_coords, file_name):
-    # Takes a data set that defines a value defined at the surface of the mesh and defines a firedrake function from this data
-
-    x_coord = mesh_coords[:, 0]
-    y_coord = mesh_coords[:, 1]
-    elevation = x_coord*0
-
-    data = pd.read_csv(file_name)
-
-    x_surface = data['x']
-    y_surface = data['y']
-    z_surface = data['z']
-
-    points = np.vstack((x_surface, y_surface))
-    points = points.T
-
-    elevation = griddata(points, z_surface, (x_coord, y_coord), method='linear')
-
-    return elevation
-
 
 def interior_penalty_factor(eq, *, shift: int = 0) -> float:
     """Interior Penalty method
@@ -101,6 +81,27 @@ class CombinedSurfaceMeasure(ufl.Measure):
         """This is to handle terms to be integrated over all surfaces in the form of other*ds.
         Here the CombinedSurfaceMeasure ds is not called, instead we just split it up as below."""
         return other*self.ds_v + other*self.ds_t + other*self.ds_b
+
+
+def data_2_function(mesh_coords, file_name):
+    # Takes a data set that defines a value defined at the surface of the mesh and defines a firedrake function from this data
+
+    x_coord = mesh_coords[:, 0]
+    y_coord = mesh_coords[:, 1]
+    elevation = x_coord*0
+
+    data = pd.read_csv(file_name)
+
+    x_surface = data['x']
+    y_surface = data['y']
+    z_surface = data['z']
+
+    points = np.vstack((x_surface, y_surface))
+    points = points.T
+
+    elevation = griddata(points, z_surface, (x_coord, y_coord), method='linear')
+
+    return elevation
 
 
 def load_spatial_field(name, filename, V, Vcg, mesh_coords):

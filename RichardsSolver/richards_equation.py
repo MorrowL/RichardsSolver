@@ -6,7 +6,7 @@ from typing import Dict, Any
 from RichardsSolver.utilities import CombinedSurfaceMeasure
 
 
-class RichardsSolver(ABC):
+class RichardsEquation(ABC):
 
     """
     Base class for Richards equation solvers. 
@@ -18,8 +18,6 @@ class RichardsSolver(ABC):
 
     def __init__(self,
                  V: fd.FunctionSpace,
-                 W: fd.VectorFunctionSpace,
-                 mesh: fd.mesh,
                  soil_curves: Dict,
                  bcs: Dict,
                  solver_parameters='default',
@@ -27,28 +25,26 @@ class RichardsSolver(ABC):
                  source_term=0,
                  quad_degree=0):
 
-        self.mesh = mesh
+        self.mesh = mesh = V.mesh()
         self.trial_space = V
         self.test_function = fd.TestFunction(V)
 
         self.dim = mesh.topological_dimension()
         self.n = fd.FacetNormal(mesh)
 
-        self.q = fd.Function(W, name="VolumetricFlux")
-        self.h_star = fd.Function(V, name='ApproximateSolution')
-
-        accepted_solvers = ['BackwardEuler', 'CrankNicolson', 'Picard', 'ImplicitMidpoint', 'SemiImplicit']
+        # Check time integration method is valid
+        accepted_solvers = ['BackwardEuler', 'CrankNicolson', 'Picard', 'ImplicitMidpoint']
         if time_integrator in accepted_solvers:
             self.time_integrator = time_integrator
         else:
-            TypeError('Time Integrator not recognised')
+            raise TypeError('Time Integrator not recognised')
         self.soil_curves = soil_curves
         self.bcs = bcs
 
         self.source_term = source_term
 
-        if quad_degree == 0:
-            
+        # Ensure quadrature degree is sufficient to integrate the product of trial and test functions (2*k) plus additional points for nonlinear soil curves.
+        if quad_degree == 0:      
             degree = V.ufl_element().degree()
             if not isinstance(degree, int):
                 degree = max(degree)
@@ -68,42 +64,31 @@ class RichardsSolver(ABC):
 
         if solver_parameters == "default":
             if mesh.topological_dimension() <= 2:
-                solver_parameters = 'direct'
+                solver_parameters = 'direct' # Direct solvers for 2D
             else:
-                solver_parameters = 'iterative'
+                solver_parameters = 'iterative' # Iterative for 3D
 
         if solver_parameters == 'direct':
-            if time_integrator == 'SemiImplicit':
-                self.solver_parameters = {
-                    "mat_type": "aij",
-                    "ksp_type": 'preonly',
-                    "pc_type": 'lu',
-                    "pc_factor_mat_solver_type": "mumps",
-                    'snes_type': 'ksponly',
-                    }
-            else:
-                self.solver_parameters = {
-                    "mat_type": "aij",
-                    "ksp_type": 'preonly',
-                    "pc_type": 'lu',
-                    "pc_factor_mat_solver_type": "mumps",
-                    'snes_type': 'newtonls'
-                    }
+            self.solver_parameters = {
+                "mat_type": "aij",
+                "ksp_type": "preonly",
+                "pc_type": "lu",
+                'snes_type': 'newtonls',
+                "pc_factor_mat_solver_type": "mumps",
+                "snes_force_iteration": True,
+                "snes_linesearch_type": "bt",
+                'snes_atol': 1e-14,
+                }
         elif solver_parameters == "iterative":
-            if time_integrator == 'SemiImplicit':
-                self.solver_parameters = {
-                    "mat_type": "aij",
-                    "ksp_type": 'gmres',
-                    "pc_type": 'bjacobi',
-                    'snes_type': 'ksponly',
-                    }
-            else:
-                self.solver_parameters = {
-                    "mat_type": "aij",
-                    "ksp_type": 'gmres',
-                    "pc_type": 'bjacobi',
-                    'snes_type': 'newtonls'
-                    }
+            self.solver_parameters = {
+                "mat_type": "aij",
+                "ksp_type": 'gmres',
+                "pc_type": 'bjacobi',
+                'snes_type': 'newtonls',
+                "snes_force_iteration": True,
+                "snes_linesearch_type": "bt",
+                'snes_monitor': None,
+                }
         # User specified solver parameters
         else:
             self.solver_parameters = solver_parameters
